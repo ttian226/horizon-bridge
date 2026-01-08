@@ -1,0 +1,8 @@
+# 敏感配置文件
+config.js
+
+# 系统文件
+.DS_Store
+
+# Claude Code
+.claude/

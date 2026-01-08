@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Horizon Bridge",
+  "version": "0.1.0",
+  "description": "Sync Gemini conversations to Obsidian",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "http://127.0.0.1:27123/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["lib/turndown.js", "content/gemini.js"]
+    }
+  ]
+}

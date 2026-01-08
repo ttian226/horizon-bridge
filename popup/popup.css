@@ -1,0 +1,247 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 320px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+}
+
+.container {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+h1 {
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: #fff;
+}
+
+.session-info {
+  background: #252540;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.session-info .label {
+  color: #888;
+}
+
+.session-info .value {
+  color: #fff;
+  margin-left: 8px;
+}
+
+.status-box {
+  background: #252540;
+  padding: 12px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.status {
+  font-size: 13px;
+  color: #888;
+}
+
+.status.success {
+  color: #4ade80;
+}
+
+.status.warning {
+  color: #fbbf24;
+}
+
+.status.error {
+  color: #f87171;
+}
+
+.stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stat-item {
+  flex: 1;
+  background: #252540;
+  padding: 10px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.stat-item.highlight {
+  background: #3730a3;
+}
+
+.stat-label {
+  display: block;
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.stat-item.highlight .stat-label {
+  color: #a5b4fc;
+}
+
+.stat-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn {
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-check {
+  color: #fff;
+  background: #374151;
+}
+
+.btn-check:hover {
+  background: #4b5563;
+}
+
+.btn-sync {
+  color: #fff;
+  background: #4f46e5;
+}
+
+.btn-sync:hover:not(:disabled) {
+  background: #4338ca;
+}
+
+.btn-sync:disabled {
+  background: #374151;
+  color: #666;
+  cursor: not-allowed;
+}
+
+.btn-sync.highlight {
+  background: #16a34a;
+  animation: pulse 2s infinite;
+}
+
+.btn-sync.highlight:hover {
+  background: #15803d;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+}
+
+.divider {
+  height: 1px;
+  background: #333;
+  margin: 4px 0;
+}
+
+.chart-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-title {
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-index {
+  color: #fff;
+  background: #0d9488;
+}
+
+.btn-index:hover:not(:disabled) {
+  background: #0f766e;
+}
+
+.btn-index:disabled {
+  background: #374151;
+  color: #666;
+  cursor: not-allowed;
+}
+
+.btn-chart {
+  color: #fff;
+  background: #7c3aed;
+}
+
+.btn-chart:hover:not(:disabled) {
+  background: #6d28d9;
+}
+
+.btn-chart:disabled {
+  background: #374151;
+  color: #666;
+  cursor: not-allowed;
+}
+
+.debug-section {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #333;
+}
+
+.btn-debug {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #888;
+  background: transparent;
+  border: 1px solid #333;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-debug:hover {
+  color: #aaa;
+  border-color: #555;
+}
+
+#domOutput {
+  width: 100%;
+  height: 120px;
+  margin-top: 8px;
+  padding: 8px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #888;
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 6px;
+  resize: vertical;
+  display: none;
+}
+
+#domOutput.show {
+  display: block;
+}

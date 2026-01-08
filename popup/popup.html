@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Horizon Bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Horizon Bridge</h1>
+
+    <div class="session-info" id="sessionInfo">
+      <span class="label">会话:</span>
+      <span class="value" id="sessionTitle">-</span>
+    </div>
+
+    <div class="status-box" id="statusBox">
+      <p class="status" id="status">点击检查查看同步状态</p>
+    </div>
+
+    <div class="stats" id="stats" style="display: none;">
+      <div class="stat-item">
+        <span class="stat-label">页面对话</span>
+        <span class="stat-value" id="totalCount">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">已同步</span>
+        <span class="stat-value" id="syncedCount">0</span>
+      </div>
+      <div class="stat-item highlight">
+        <span class="stat-label">待同步</span>
+        <span class="stat-value" id="unsyncedCount">0</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-check" id="checkBtn">检查同步状态</button>
+      <button class="btn btn-sync" id="syncBtn" disabled>同步到 Obsidian</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="chart-section">
+      <p class="section-title">图谱生成</p>
+      <div class="actions">
+        <button class="btn btn-index" id="indexBtn">生成 _INDEX.md</button>
+        <button class="btn btn-chart" id="chartBtn">生成逻辑图谱 (AI)</button>
+      </div>
+    </div>
+
+    <div class="debug-section">
+      <button class="btn-debug" id="debugBtn">调试: 获取 DOM</button>
+      <textarea id="domOutput" readonly placeholder="调试信息..."></textarea>
+    </div>
+  </div>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
