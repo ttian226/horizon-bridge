@@ -156,19 +156,68 @@ ${conversation.answer}
   }
 
   /**
-   * 生成文件名
+   * 🔥 智能文件名生成器 v2 (正则去噪版)
+   * 策略：正则去噪 + 首句提取 + 长度控制
    * @param {number} index - 编号
+   * @param {string} question - 原始提问
    */
-  static generateFileName(index) {
-    const now = new Date();
-    const dateStr = now.getFullYear().toString() +
-      (now.getMonth() + 1).toString().padStart(2, '0') +
-      now.getDate().toString().padStart(2, '0');
-    const timeStr = now.getHours().toString().padStart(2, '0') +
-      now.getMinutes().toString().padStart(2, '0');
+  static generateFileName(index, question) {
     const indexStr = index.toString().padStart(3, '0');
 
-    return `${indexStr}-${dateStr}-${timeStr}.md`;
+    if (!question) return `${indexStr}-Untitled.md`;
+
+    // 1. 预处理：只取第一行 (通常长描述的第一行是重点)
+    let raw = question.split('\n')[0].trim();
+
+    // 2. 正则去噪：移除常见的"废话前缀" (支持中英文)
+    const noisePatterns = [
+      /^(请问|请|帮忙|帮我|能否|能不能|可不可以|告诉我|解释一下|我想知道|我想问|关于|你好|嗨|哈喽)/i,
+      /^(Hi|Hello|Hey|Gemini|Question|Help|Can you|Could you|I want to|I need to|Please|Explain|What is|How to|How do I)/i
+    ];
+
+    // 循环去除前缀，直到没有匹配
+    let cleaned = raw;
+    let hasMatch = true;
+    while (hasMatch) {
+      hasMatch = false;
+      for (const p of noisePatterns) {
+        if (p.test(cleaned)) {
+          cleaned = cleaned.replace(p, '').trim();
+          // 去除前缀后可能留下的逗号、冒号
+          cleaned = cleaned.replace(/^[,，:：\s]+/, '');
+          hasMatch = true;
+        }
+      }
+    }
+
+    // 3. 标点截断：只要第一句话 (遇到 。？! . ? ! 就停止)
+    const sentenceEnd = cleaned.search(/[。？！\.\?\!]/);
+    if (sentenceEnd > 0) {
+      cleaned = cleaned.substring(0, sentenceEnd);
+    }
+
+    // 4. 再次去噪：移除 Markdown 符号和非法字符
+    let safeName = cleaned
+      .replace(/[\`\*\_\[\]\(\)\#\+\-\!\>\~]/g, '')  // 移除 MD 符号
+      .replace(/[\\/:*?"<>|]/g, '')                  // 移除系统文件名非法字符
+      .replace(/\s+/g, '_')                          // 空格转下划线
+      .replace(/_+/g, '_')                           // 多个下划线合并
+      .replace(/^_|_$/g, '');                        // 去除首尾下划线
+
+    // 5. 长度熔断：如果还是很长，强制截取前 40 个字符
+    if (safeName.length > 40) {
+      safeName = safeName.slice(0, 40);
+      // 避免截断在单词中间（对英文友好）
+      const lastUnderscore = safeName.lastIndexOf('_');
+      if (lastUnderscore > 30) {
+        safeName = safeName.slice(0, lastUnderscore);
+      }
+    }
+
+    // 6. 兜底：如果清洗完没字了
+    if (safeName.length < 2) safeName = 'Discussion';
+
+    return `${indexStr}-${safeName}.md`;
   }
 
   /**
@@ -189,7 +238,7 @@ ${conversation.answer}
       }
 
       currentIndex++;
-      const fileName = this.generateFileName(currentIndex);
+      const fileName = this.generateFileName(currentIndex, conv.question);
       const content = this.generateMarkdown(conv, currentIndex);
       const filePath = `${sessionTitle}/${fileName}`;
 

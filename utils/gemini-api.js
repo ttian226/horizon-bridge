@@ -6,9 +6,6 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 export class GeminiAPI {
   /**
    * 调用 Gemini 生成内容
-   * @param {string} prompt - 提示词
-   * @param {string} systemPrompt - 系统提示词（可选）
-   * @param {object} options - 额外配置
    */
   static async generate(prompt, systemPrompt = '', options = {}) {
     const url = `${API_BASE}/${CONFIG.geminiModel}:generateContent?key=${CONFIG.geminiApiKey}`;
@@ -57,54 +54,40 @@ export class GeminiAPI {
   }
 
   /**
-   * 智能内容清洗 (Smart Content Trimmer)
-   * 核心作用：在喂给 AI 前，去除对生成图谱无用的"噪音细节"
-   * @param {string} text - 原始文本
-   * @param {number} maxLength - 最大字符长度
+   * 智能内容清洗
    */
   static smartTrim(text, maxLength) {
     if (!text) return '';
-
-    // 1. 代码块折叠 (Code Block Folding)
-    // 如果代码块超过 6 行，替换为摘要
     let processed = text.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
       const lines = code.split('\n');
       if (lines.length > 6) {
         return `\`\`\`${lang}\n[Code: ${lines.length} lines hidden]\n\`\`\``;
       }
-      return match; // 短代码块保留
+      return match;
     });
-
-    // 2. 移除 Base64 图片 (防止 Token 爆炸)
     processed = processed.replace(/data:image\/[a-zA-Z]+;base64,[^\s"')]+/g, '[Base64 Image]');
-
-    // 3. 字符硬截断 (Hard Truncation)
     if (processed.length > maxLength) {
       return processed.slice(0, maxLength) + '...(truncated)';
     }
-
     return processed;
   }
 
   /**
-   * 四级自适应策略：根据数据量级动态计算压缩率和展示模式
-   * @param {number} rawCount - 原始 QA 数量
-   * @returns {object} 配置对象
+   * 四级自适应策略 (v14: 降低密度，优化美观度)
    */
   static calculateGraphConfig(rawCount) {
     let config = {
-      mode: 'simple',        // simple | story | map | architecture
-      useGroups: false,      // 是否使用 Group 容器
-      targetPhases: 0,       // 目标分组数
-      mergeStrength: 'none', // 合并力度: none | medium | high | maximum
-      nodesPerGroup: 10,     // 理想的单组节点容量
-      estimatedNodes: rawCount, // 预估最终节点数
-      cardWidth: 360         // 动态卡片宽度
+      mode: 'simple',
+      useGroups: false,
+      targetPhases: 0,
+      mergeStrength: 'none',
+      nodesPerGroup: 6,     // 🔥 降低默认容量 (原10)，防止单个区块过大
+      estimatedNodes: rawCount,
+      cardWidth: 360
     };
 
     if (rawCount <= 15) {
-      // --- 🟢 Level 1: 微型模式 (1-15) ---
-      // 策略：完全不压缩，展示所有细节，不分组
+      // Level 1: Simple
       config.mode = 'simple';
       config.useGroups = false;
       config.mergeStrength = 'none';
@@ -113,296 +96,101 @@ export class GeminiAPI {
       config.cardWidth = 360;
 
     } else if (rawCount <= 50) {
-      // --- 🔵 Level 2: 故事线模式 (16-50) ---
-      // 策略：轻度压缩，分3-4个组，保留大部分流程
+      // Level 2: Story
       config.mode = 'story';
       config.useGroups = true;
       config.mergeStrength = 'medium';
-      config.estimatedNodes = Math.ceil(rawCount * 0.6); // 60% 保留率
-      config.nodesPerGroup = 8;
+      config.estimatedNodes = Math.ceil(rawCount * 0.6);
+      config.nodesPerGroup = 6; // 🔥 更小的组，更精致
       config.targetPhases = Math.ceil(config.estimatedNodes / config.nodesPerGroup);
-      config.targetPhases = Math.max(2, Math.min(config.targetPhases, 5));
+      config.targetPhases = Math.max(2, Math.min(config.targetPhases, 6));
       config.cardWidth = 380;
 
     } else if (rawCount <= 120) {
-      // --- 🟠 Level 3: 地图模式 (51-120) ---
-      // 策略：强力压缩，分5-8个组，开始合并同类项
+      // Level 3: Map
       config.mode = 'map';
       config.useGroups = true;
       config.mergeStrength = 'high';
-      config.estimatedNodes = Math.ceil(rawCount * 0.3); // 30% 保留率
-      config.nodesPerGroup = 10;
+      config.estimatedNodes = Math.ceil(rawCount * 0.3);
+      config.nodesPerGroup = 8; // 🔥 适度降低
       config.targetPhases = Math.ceil(config.estimatedNodes / config.nodesPerGroup);
-      config.targetPhases = Math.max(4, Math.min(config.targetPhases, 8));
+      config.targetPhases = Math.max(5, Math.min(config.targetPhases, 10)); // 允许更多组
       config.cardWidth = 400;
 
     } else {
-      // --- 🔴 Level 4: 架构图模式 (120+) ---
-      // 策略：极致压缩，使用"超级节点+列表"
+      // Level 4: Architecture
       config.mode = 'architecture';
       config.useGroups = true;
       config.mergeStrength = 'maximum';
-      // 核心：无论多长，最终只保留 30-40 个超级节点
-      config.estimatedNodes = Math.min(40, Math.ceil(rawCount * 0.15)); // 15% 压缩率
-      config.nodesPerGroup = 5; // 每个 Phase 只放 4-6 个大节点
+      config.estimatedNodes = Math.min(40, Math.ceil(rawCount * 0.15));
+      config.nodesPerGroup = 5; // 🔥 超级节点模式，每组只放5个
       config.targetPhases = Math.ceil(config.estimatedNodes / config.nodesPerGroup);
-      config.targetPhases = Math.min(config.targetPhases, 10); // 封顶 10 个组
-      config.cardWidth = 480; // 宽卡片，为了放列表
+      config.targetPhases = Math.min(config.targetPhases, 12);
+      config.cardWidth = 480;
     }
 
-    console.log(`[GeminiAPI] Strategy: ${config.mode.toUpperCase()} (Raw: ${rawCount} -> Target: ~${config.estimatedNodes})`);
+    console.log(`[GeminiAPI] Strategy: ${config.mode.toUpperCase()} (Target Nodes: ~${config.estimatedNodes}, Groups: ${config.targetPhases})`);
     return config;
   }
 
   /**
-   * 分析对话，识别 Signal 和 Noise
-   * @param {array} conversations - 对话数组
-   */
-  static async analyzeConversations(conversations) {
-    const systemPrompt = `你是一个高级技术文档编辑。你的任务是分析一系列 QA 对话，识别哪些是有价值的知识（Signal），哪些是过程噪音（Noise）。
-
-规则：
-1. Signal（信号）：最终方案、关键结论、成功的代码、重要的概念解释
-2. Noise（噪音）：失败的尝试、重复的调试、错误的假设、中间过渡
-
-请返回 JSON 格式，包含每个 QA 的分类和简短摘要。`;
-
-    const conversationText = conversations.map((conv, i) => {
-      return `### QA ${i + 1} (ID: ${conv.geminiId})
-**Q:** ${conv.question.slice(0, 200)}...
-**A:** ${conv.answer.slice(0, 500)}...`;
-    }).join('\n\n');
-
-    const prompt = `请分析以下 ${conversations.length} 组 QA 对话：
-
-${conversationText}
-
-请返回 JSON 格式：
-{
-  "analysis": [
-    {
-      "index": 1,
-      "geminiId": "xxx",
-      "type": "signal" | "noise",
-      "summary": "简短摘要（10字以内）",
-      "reason": "分类理由"
-    }
-  ],
-  "flowchart": "Mermaid 流程图代码，展示对话的逻辑脉络"
-}`;
-
-    try {
-      const result = await this.generate(prompt, systemPrompt);
-
-      // 尝试解析 JSON
-      const jsonMatch = result.text.match(/```json\n?([\s\S]*?)\n?```/) ||
-                        result.text.match(/\{[\s\S]*\}/);
-
-      if (jsonMatch) {
-        const jsonStr = jsonMatch[1] || jsonMatch[0];
-        const parsed = JSON.parse(jsonStr);
-        return { success: true, data: parsed };
-      }
-
-      return { success: false, error: 'Failed to parse JSON response', raw: result.text };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
-  }
-
-  /**
-   * 生成 Mermaid 流程图（保留用于兼容）
-   * @param {array} conversations - 对话数组
-   * @param {string} sessionTitle - 会话标题
-   */
-  static async generateMermaidChart(conversations, sessionTitle) {
-    const systemPrompt = `你是一个技术文档专家，擅长将复杂的对话整理成清晰的流程图。`;
-
-    const conversationText = conversations.map((conv, i) => {
-      return `### QA ${i + 1}
-**Q:** ${conv.question.slice(0, 300)}
-**A:** ${conv.answer.slice(0, 800)}`;
-    }).join('\n\n---\n\n');
-
-    const prompt = `请分析以下关于「${sessionTitle}」的对话，生成一个 Mermaid 流程图。
-
-要求：
-1. 识别对话的关键阶段：探索、试错、转折、最终方案
-2. 用虚线表示失败的尝试
-3. 关键节点需要标注对应的 QA 编号
-4. 使用中文标签
-
-对话内容：
-${conversationText}
-
-请只返回 Mermaid 代码，格式如下：
-\`\`\`mermaid
-graph TD
-    ...
-\`\`\``;
-
-    try {
-      const result = await this.generate(prompt, systemPrompt);
-
-      // 提取 Mermaid 代码
-      const mermaidMatch = result.text.match(/```mermaid\n?([\s\S]*?)\n?```/);
-
-      if (mermaidMatch) {
-        return { success: true, mermaid: mermaidMatch[1].trim() };
-      }
-
-      return { success: false, error: 'Failed to extract Mermaid code', raw: result.text };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
-  }
-
-  /**
-   * 生成 Canvas 数据（智能合并 + 自适应布局）
-   * @param {array} conversations - 对话数组
-   * @param {string} sessionTitle - 会话标题
-   * @param {array} fileMapping - 文件映射 [{index, fileName}]
-   * @param {string} outputLang - 输出语言: 'en' | 'zh'，默认 'en'
+   * 生成 Canvas 数据
    */
   static async generateCanvasData(conversations, sessionTitle, fileMapping, outputLang = 'en') {
     const totalItems = conversations.length;
-
-    // --- 使用动态配置计算器 ---
     const config = this.calculateGraphConfig(totalItems);
-    console.log(`[GeminiAPI] Output language: ${outputLang === 'zh' ? 'Chinese' : 'English'}`);
 
-    // --- 🔥 语言与风格策略 (Language & Style Protocol) ---
-    // 根据 outputLang 参数强制输出指定语言
+    // --- 语言与风格 ---
     const LANGUAGE_RULE = outputLang === 'zh'
       ? `
 **LANGUAGE & STYLE PROTOCOL:**
 1. **Output Language**: **CHINESE (中文)** - ALL output MUST be in Chinese.
-2. **Content Structure (CRITICAL)**:
-   - **Format**: **ALWAYS use Bullet Points (•)** for \`canvas_summary\`.
-   - **Style**: **Structured & Informative (结构化表达)**.
-     - **Requirement**: Use "动作 + 对象 + 上下文" structure.
-     - **Avoid**: 4-character idioms (Too short) OR conversational filler (Too long).
-     - **Bad**: "• 鉴权实现"
-     - **Good**: "• 采用 OAuth2 协议实现用户鉴权，并集成 JWT"
-3. **Tech Terms**: Keep specific keywords (OAuth2, Redis, LLM) in English.
-4. **Labels & Titles**: Must be in Chinese (e.g. "阶段一: 项目初始化" NOT "Phase 1: Init").`
+2. **Content Structure**: **ALWAYS use Bullet Points (•)**.
+3. **Labels**: Use Chinese labels (e.g. "阶段一: 初始化").`
       : `
 **LANGUAGE & STYLE PROTOCOL:**
-1. **Output Language**: **ENGLISH** - ALL output MUST be in English.
-2. **Content Structure (CRITICAL)**:
-   - **Format**: **ALWAYS use Bullet Points (•)** for \`canvas_summary\`.
-   - **Style**: Keep it Professional & Direct.
-     - **Good**: "• Implemented OAuth2 auth flow"
-     - **Good**: "• Configured Redis caching layer"
-3. **Tech Terms**: Use standard technical terminology.
-4. **Labels & Titles**: Must be in English (e.g. "Phase 1: Project Setup").`;
+1. **Output Language**: **ENGLISH**.
+2. **Content Structure**: **ALWAYS use Bullet Points (•)**.`;
 
-    // --- 构建合并指令 ---
-    let mergeInstruction = '';
-    let antiPattern = '';
-
-    if (config.mergeStrength === 'none') {
-      mergeInstruction = 'Create one node for each QA item.';
-      antiPattern = '';
-    } else {
-      mergeInstruction = `Synthesize by TOPIC. Create ONE node per "Technical Topic".`;
-      antiPattern = `**FORBIDDEN**: Linear 1:1 mapping. Compress ${totalItems} QAs -> ~${config.estimatedNodes} Nodes.`;
-    }
-
-    // --- 构建分组指令 ---
-    let structureInstruction = config.mode === 'simple'
-      ? 'Layout: Simple flowchart. Return empty phases [].'
-      : `Grouping: Exactly ${config.targetPhases} logical Phases.`;
-
-    // --- 🔥 统一核心规则 v11 (动态叶子节点版) ---
+    // --- 核心规则 v12 ---
     const CORE_RULES = `
 **CRITICAL RULES:**
 1. **Granularity**: Synthesize multiple QAs into Insight Nodes.
 2. **Content**: **MANDATORY BULLET POINTS (•)** for \`canvas_summary\`.
-   - Each node MUST list 2-4 key technical points derived from the merged QAs.
-3. **Linking Strategy (DYNAMIC LEAF-NODE PROTOCOL)**:
-   - **The "Leaf Node" Rule (Crucial)**: Link *Sub-concepts*, NOT the *Main Topic*.
-     - If the conversation is about "Vue Router":
-       - ❌ STOP linking: [[Vue Router]], [[Vue]], [[Routing]]. (Context/Background)
-       - ✅ START linking: [[Navigation Guards]], [[History Mode]], [[Lazy Loading]], [[Route Params]]. (Specifics)
-     - If the conversation is about "Firebase":
-       - ❌ STOP linking: [[Firebase]], [[Google]], [[Backend]]. (Context/Background)
-       - ✅ START linking: [[Firestore Rules]], [[Snapshot Listeners]], [[Cloud Functions]]. (Specifics)
-   - **The "Novelty" Rule**: Only link concepts that introduce *new structure* or *specificity* to the knowledge graph.
-   - **The "Wikipedia Test"**: Ask yourself - "Is this word worthy of its own Wiki page?" If too generic (e.g. [[API]], [[Code]], [[Data]]), don't link.
-   - **Format**: Wrap in double brackets.
-4. **Emoji**: Mandatory relevant emoji.
-5. **Nodes**: Max ${config.estimatedNodes} nodes.`;
+3. **Linking**: Use [[Wiki-Links]] for specific sub-concepts (Leaf Nodes).
 
-    // --- 系统提示词 ---
-    let systemPrompt;
-    if (config.mode === 'architecture') {
-      // 🔴 Level 4: 架构模式
-      systemPrompt = `You are a Principal Software Architect building a Second Brain.
-Goal: Create a HIGH-LEVEL Architecture Map with KNOWLEDGE LINKS for Obsidian.
+**4. 🕸️ TOPOLOGY STRATEGY (THEMATIC CLUSTERING):**
+   - **GOAL**: Re-organize by **TOPIC**, NOT by TIME.
+   - **Grouping**: Put related QAs into the SAME Phase/Group.
+   - **Strict Hierarchy**: Each Phase MUST have one "Core Concept" (Hub) and several "Detail Nodes" (Spokes).
 
+**5. 🔗 WIRING INSTRUCTIONS:**
+   - **Hub-to-Hub**: Connect related Phases via their Main Concepts.
+   - **Back-Linking**: Create loops if discussion returns to a previous topic.
+
+6. **Nodes**: Max ${config.estimatedNodes} nodes.`;
+
+    const systemPrompt = `You are a Knowledge Architect.
+Goal: Create a Structured Knowledge Graph for Obsidian.
 ${LANGUAGE_RULE}
 ${CORE_RULES}
+Configuration: Mode=${config.mode.toUpperCase()}, Output=JSON`;
 
-**CONFIGURATION:**
-- Mode: ARCHITECTURE (Super-Nodes)
-- Output: Minified JSON
+    const maxQ = config.mode === 'architecture' ? 150 : 300;
+    const maxA = config.mode === 'architecture' ? 300 : 600;
 
-**MANDATORY:**
-1. ${antiPattern}
-2. ${mergeInstruction}
-3. ${structureInstruction}
-4. **Traceability**: qa_indices must capture ALL merged indices.`;
-    } else {
-      // 🟢 常规模式 (Story/Map)
-      systemPrompt = `You are a Senior Technical Editor building a Knowledge Graph.
-Goal: Compress conversation into logical structure with WIKI-LINKS for Obsidian.
-
-${LANGUAGE_RULE}
-${CORE_RULES}
-
-**CONFIGURATION:**
-- Mode: ${config.mode.toUpperCase()}
-- Output: Minified JSON
-
-**MANDATORY:**
-1. ${antiPattern}
-2. ${mergeInstruction}
-3. ${structureInstruction}
-4. **Traceability**: qa_indices must capture ALL merged indices.`;
-    }
-
-    // --- 动态调整输入长度（architecture 模式更激进压缩输入）---
-    const maxQ = config.mode === 'architecture' ? 150 : (config.mode === 'map' ? 200 : (config.mode === 'story' ? 400 : 600));
-    const maxA = config.mode === 'architecture' ? 300 : (config.mode === 'map' ? 400 : (config.mode === 'story' ? 800 : 1200));
-
-    // 使用智能清洗：折叠代码块、移除 Base64，再截断
     const conversationText = conversations.map((conv, i) => {
       const cleanQ = this.smartTrim(conv.question, maxQ);
       const cleanA = this.smartTrim(conv.answer, maxA);
-      return `[Item ${i}]
-Q: ${cleanQ}
-A: ${cleanA}`;
+      return `[Item ${i}] Q: ${cleanQ}\nA: ${cleanA}`;
     }).join('\n\n');
 
-    // --- 根据模式生成不同的 Prompt ---
-    let prompt;
-    if (config.mode === 'simple') {
-      // 简单模式也尽量使用列表
-      prompt = `Analyze "${sessionTitle}". Create flowchart.
-${LANGUAGE_RULE}
-${conversationText}
-
-Output JSON: { "nodes": [{"id":"n1","type":"signal","emoji":"🚀","label":"Label","canvas_summary":"• Implemented [[Feature]] using [[Tool]]","qa_indices":[0]}], "edges":[] }`;
-    } else {
-      // 🔵/🟠/🔴 通用 User Prompt (强化列表格式示例)
-      prompt = `Transform "${sessionTitle}" into Knowledge Map.
-
+    const prompt = `Transform "${sessionTitle}" into Knowledge Map.
 Raw Data (${totalItems} items):
 ${conversationText}
 
 ----------------
-**YOUR TASK**: Compress into ~${config.estimatedNodes} nodes.
+**YOUR TASK**: Compress into ~${config.estimatedNodes} nodes in ${config.targetPhases} thematic phases.
 ${LANGUAGE_RULE}
 
 Output STRICT JSON:
@@ -415,172 +203,79 @@ Output STRICT JSON:
       "id": "n1",
       "phase_id": "p1",
       "type": "signal",
-      "emoji": "🏗️",
-      "label": "Topic Label",
-      "canvas_summary": "• 采用 [[OAuth2]] 协议实现用户鉴权\\n• 集成 [[Redis]] 优化 [[Session]] 存储\\n• 使用 [[Docker]] 进行容器化部署",
-      "qa_indices": [0, 1, 2]
+      "emoji": "💡",
+      "label": "Concept Label",
+      "canvas_summary": "• Point 1 with [[Link]]\\n• Point 2",
+      "qa_indices": [0, 1]
     }
   ],
-  "edges": [{"from": "n1", "to": "n2"}]
-}
-**CONSTRAINTS**:
-- phases: ${config.targetPhases}
-- nodes: ~${config.estimatedNodes}
-- canvas_summary: **MUST be Bullet Points (•) with [[Wiki-Links]]**`;
-    }
+  "edges": [{"from": "n1", "to": "n2", "label": "relates to"}]
+}`;
 
     try {
-      // 稍微提高 temperature (0.4)，让 AI 有空间重组结构
-      const result = await this.generate(prompt, systemPrompt, {
-        temperature: 0.4,
-        maxOutputTokens: 8192  // gemini-2.0-flash-lite 最大输出限制
-      });
-      console.log('[GeminiAPI] Raw response:', result.text.slice(0, 500));
+      const result = await this.generate(prompt, systemPrompt, { temperature: 0.4 });
+      let jsonStr = result.text.match(/\{[\s\S]*\}/)?.[0];
 
-      // 尝试多种方式提取 JSON
-      let jsonStr = null;
-
-      // 方式 1: ```json 代码块
-      const jsonBlockMatch = result.text.match(/```json\n?([\s\S]*?)\n?```/);
-      if (jsonBlockMatch) {
-        jsonStr = jsonBlockMatch[1];
-      }
-
-      // 方式 2: ``` 代码块（无语言标记）
       if (!jsonStr) {
-        const codeBlockMatch = result.text.match(/```\n?([\s\S]*?)\n?```/);
-        if (codeBlockMatch && codeBlockMatch[1].trim().startsWith('{')) {
-          jsonStr = codeBlockMatch[1];
-        }
+          const codeBlock = result.text.match(/```json\n?([\s\S]*?)\n?```/) || result.text.match(/```\n?([\s\S]*?)\n?```/);
+          if (codeBlock) jsonStr = codeBlock[1];
+      }
+      if (!jsonStr) throw new Error("No JSON found");
+
+      // 简单修复 JSON
+      jsonStr = jsonStr.trim().replace(/,\s*$/, '').replace(/,\s*[}\]]$/, (m) => m.slice(-1));
+
+      let parsed;
+      try { parsed = JSON.parse(jsonStr); } catch(e) {
+          // 再次尝试简单的括号补全
+          const openBraces = (jsonStr.match(/\{/g)||[]).length;
+          const closeBraces = (jsonStr.match(/\}/g)||[]).length;
+          if (openBraces > closeBraces) jsonStr += '}'.repeat(openBraces - closeBraces);
+          parsed = JSON.parse(jsonStr);
       }
 
-      // 方式 3: 直接找 JSON 对象
-      if (!jsonStr) {
-        const jsonObjMatch = result.text.match(/\{[\s\S]*\}/);
-        if (jsonObjMatch) {
-          jsonStr = jsonObjMatch[0];
-        }
-      }
+      if (Array.isArray(parsed)) parsed = { nodes: parsed, edges: [] };
 
-      if (jsonStr) {
-        // 清理可能的尾随逗号等问题
-        jsonStr = jsonStr.trim();
-        console.log('[GeminiAPI] Extracted JSON length:', jsonStr.length);
+      parsed.meta = { mode: config.mode, cardWidth: config.cardWidth };
+      return { success: true, data: parsed };
 
-        // 尝试修复截断的 JSON
-        const repairJSON = (str) => {
-          // 移除尾部不完整的对象/数组元素
-          str = str.replace(/,\s*$/, '');  // 移除尾部逗号
-          str = str.replace(/,\s*[}\]]$/, (m) => m.slice(-1));  // 修复 ",}" 或 ",]"
-
-          // 计算未闭合的括号
-          let braces = 0, brackets = 0;
-          for (const c of str) {
-            if (c === '{') braces++;
-            else if (c === '}') braces--;
-            else if (c === '[') brackets++;
-            else if (c === ']') brackets--;
-          }
-
-          // 补齐缺失的闭合括号
-          while (brackets > 0) { str += ']'; brackets--; }
-          while (braces > 0) { str += '}'; braces--; }
-
-          return str;
-        };
-
-        try {
-          let parsed;
-          try {
-            parsed = JSON.parse(jsonStr);
-          } catch (e) {
-            // 尝试修复截断的 JSON
-            console.log('[GeminiAPI] Attempting to repair truncated JSON...');
-            const repairedStr = repairJSON(jsonStr);
-            parsed = JSON.parse(repairedStr);
-            console.log('[GeminiAPI] JSON repaired successfully');
-          }
-
-          // 处理 AI 直接返回数组的情况
-          if (Array.isArray(parsed)) {
-            console.log('[GeminiAPI] Response is array, wrapping as nodes');
-            parsed = {
-              main_topic: sessionTitle,
-              summary: '',
-              nodes: parsed,
-              edges: []
-            };
-          }
-
-          // 验证必要字段
-          if (!parsed.nodes || !Array.isArray(parsed.nodes)) {
-            console.error('[GeminiAPI] Invalid response: nodes missing or not array', parsed);
-            return { success: false, error: 'AI 返回格式错误：缺少 nodes 数组', raw: result.text };
-          }
-
-          // 标准化节点字段（classification -> type）
-          parsed.nodes = parsed.nodes.map(node => ({
-            ...node,
-            type: node.type || node.classification || 'signal',
-            is_off_topic: node.is_off_topic || node.type === 'noise' || node.classification === 'noise'
-          }));
-
-          // 🔥 注入 meta 信息供 convertToCanvasJSON 使用
-          parsed.meta = {
-            mode: config.mode,
-            cardWidth: config.cardWidth
-          };
-
-          console.log('[GeminiAPI] Parsed successfully, nodes count:', parsed.nodes.length);
-          return { success: true, data: parsed };
-        } catch (parseErr) {
-          console.error('[GeminiAPI] JSON parse error:', parseErr.message);
-          console.error('[GeminiAPI] JSON string:', jsonStr);
-          return { success: false, error: `JSON 解析错误: ${parseErr.message}`, raw: result.text };
-        }
-      }
-
-      return { success: false, error: 'AI 响应中未找到有效 JSON', raw: result.text };
     } catch (e) {
-      console.error('[GeminiAPI] generateCanvasData error:', e);
+      console.error(e);
       return { success: false, error: e.message };
     }
   }
 
   /**
-   * 智能自适应布局 v5 (四级自适应 + Super-Node Layout)
-   * 改进：动态卡片宽度、支持列表渲染、architecture 模式 2 列布局
-   * @param {object} aiData - AI 返回的图谱数据（含 phases、nodes、edges、meta）
-   * @param {string} sessionTitle - 会话标题
-   * @param {array} fileMapping - 文件映射 [{index, fileName}]
-   * @param {string} basePath - Obsidian 基础路径（如 'Gemini'）
+   * 智能自适应布局 v15 (Gateway Protocol & Rainbow Hubs)
+   * 核心改进：
+   * 1. 🛡️ Gateway Protocol (网关协议):
+   *    - 跨区块连线被强制"升维"为 Hub-to-Hub
+   *    - 即使 AI 连接的是两个小节点，视觉上也只显示它们所属 Hub 之间的连接
+   *    - 彻底消灭"穿透线"和"斜切线"
+   * 2. 🌈 Rainbow Theme: 保持彩虹配色
+   * 3. 🧩 Strict Hierarchy: 严格的 Hub-Spoke 星型拓扑
    */
   static convertToCanvasJSON(aiData, sessionTitle, fileMapping, basePath = '') {
     const canvas = { nodes: [], edges: [] };
 
-    if (!aiData || !aiData.nodes || !Array.isArray(aiData.nodes)) {
-      console.error('[GeminiAPI] convertToCanvasJSON: invalid aiData', aiData);
-      return canvas;
-    }
+    if (!aiData || !aiData.nodes || !Array.isArray(aiData.nodes)) return canvas;
 
-    // --- 1. 从 meta 获取动态配置 ---
+    // --- 1. 配置参数 ---
     const mode = aiData.meta?.mode || 'map';
-    const dynamicCardWidth = aiData.meta?.cardWidth || 360;
+    const CARD_WIDTH = aiData.meta?.cardWidth || 400;
 
-    // --- 2. 基础配置（根据模式动态调整）---
-    const CARD_WIDTH = dynamicCardWidth;
-    const CARD_GAP_X = mode === 'architecture' ? 60 : 50;
-    const CARD_GAP_Y = 100;
+    const GAP_X = 60;
+    const GAP_Y = 120;
+    const GROUP_PADDING = 60;
+    const GROUP_GAP_X = 250; // 加大组间距，让高速公路更宽敞
+    const GROUP_GAP_Y = 250;
+    const PHASES_PER_ROW = 2;
+    const SATELLITES_PER_ROW = 3;
 
-    // 章节(Group)布局参数
-    const GROUP_PADDING = mode === 'architecture' ? 50 : 40;
-    const GROUP_GAP_X = mode === 'architecture' ? 220 : 180;
-    const GROUP_GAP_Y = mode === 'architecture' ? 180 : 150;
+    // 🎨 Obsidian Canvas 颜色代码
+    const PHASE_COLORS = ['1', '2', '3', '4', '5', '6'];
 
-    // 网格参数：architecture 模式每行 2 个（宽卡片），其他模式 3 个
-    const NODES_PER_ROW = mode === 'architecture' ? 2 : 3;
-
-    // --- 3. 辅助函数 ---
+    // --- 2. 辅助函数 ---
     const fileMap = {};
     (fileMapping || []).forEach(f => fileMap[f.index - 1] = f.fileName);
 
@@ -589,91 +284,41 @@ Output STRICT JSON:
       return [basePath, sessionTitle, fileName].filter(p => p).join('/');
     };
 
-    // 🔥 高度计算 v7：基于视觉权重的精准计算（解决中文遮挡）
     const estimateHeight = (text) => {
       if (!text) return 100;
-
-      // 1. 模拟渲染：去掉链接语法，只保留显示文本 "QA1"
       const renderedText = text.replace(/\[\[.*?\|(.*?)\]\]/g, '$1');
       const lines = renderedText.split('\n');
-
-      // 🔥 核心：计算视觉长度（汉字算 1.8，英文算 1）
-      const getVisualLength = (str) => {
-        let len = 0;
-        for (let i = 0; i < str.length; i++) {
-          const code = str.charCodeAt(i);
-          if (code > 255) len += 1.8; // 中文/全角符号
-          else len += 1;              // 英文/半角符号
-        }
-        return len;
-      };
-
-      // 基础 Padding (Top 25 + Bottom 25)
       let totalHeight = 50;
-
-      // 定义每行的"视觉容量"
-      // 宽卡片(480px)约容纳 50 个英文字符单位，窄卡片(360px)约 38
       const visualCapacity = CARD_WIDTH > 400 ? 50 : 38;
-
       lines.forEach(line => {
         const trimmed = line.trim();
-
-        if (trimmed.length === 0) {
-          totalHeight += 5;
-        } else if (trimmed.startsWith('###')) {
-          totalHeight += 40; // 标题
-        } else if (trimmed.startsWith('---')) {
-          totalHeight += 15; // 分割线
-        } else {
-          // 列表项或普通文本：使用视觉长度计算
-          const visualLen = getVisualLength(trimmed);
-          const rows = Math.ceil(visualLen / visualCapacity) || 1;
-          totalHeight += rows * 26; // 行高
-        }
+        let len = 0;
+        for (let i = 0; i < trimmed.length; i++) len += (trimmed.charCodeAt(i) > 255 ? 1.8 : 1);
+        if (trimmed.startsWith('###')) totalHeight += 40;
+        else if (trimmed.startsWith('---')) totalHeight += 15;
+        else totalHeight += (Math.ceil(len / visualCapacity) || 1) * 26;
       });
-
-      return totalHeight + 15; // 底部缓冲
+      return totalHeight + 15;
     };
 
-    // 构建内容：动态 Emoji + 横排链接
     const buildCardContent = (node) => {
-      // 优先使用 AI 生成的 emoji，没有则回退到默认
       const defaultIcon = node.type === 'signal' ? '🟢' : '🔸';
       const icon = node.emoji || defaultIcon;
-
-      let cardText = `### ${icon} ${node.label || 'Node'}\n\n`;
-      cardText += node.canvas_summary || '暂无摘要';
-
-      if (node.qa_indices && Array.isArray(node.qa_indices) && node.qa_indices.length > 0) {
+      let cardText = `### ${icon} ${node.label || 'Node'}\n\n${node.canvas_summary || '暂无摘要'}`;
+      if (node.qa_indices && node.qa_indices.length > 0) {
         cardText += '\n\n---\n';
-
-        // 收集链接，最多显示 6 个
         const links = [];
-        const maxLinks = 6;
-        const displayIndices = node.qa_indices.slice(0, maxLinks);
-
-        displayIndices.forEach(idx => {
+        node.qa_indices.slice(0, 6).forEach(idx => {
           const fName = fileMap[idx];
-          if (fName) {
-            links.push(`[[${buildFilePath(fName)}|QA${idx + 1}]]`);
-          }
+          if (fName) links.push(`[[${buildFilePath(fName)}|QA${idx + 1}]]`);
         });
-
-        if (node.qa_indices.length > maxLinks) {
-          links.push(`+${node.qa_indices.length - maxLinks}more`);
-        }
-
-        // 横排：使用空格连接，节省高度
+        if (node.qa_indices.length > 6) links.push(`+${node.qa_indices.length - 6}more`);
         cardText += links.join(' ');
-
-      } else if (node.index !== undefined) {
-        const fName = fileMap[node.index];
-        if (fName) cardText += `\n\n---\n[[${buildFilePath(fName)}|📄 详情]]`;
       }
       return cardText;
     };
 
-    // --- 3. 数据预处理 ---
+    // --- 3. 数据分组 ---
     const hasPhases = aiData.phases && aiData.phases.length > 0;
     const isSimpleMode = !hasPhases;
     const phases = hasPhases ? aiData.phases : [{ id: 'root', title: '' }];
@@ -688,60 +333,88 @@ Output STRICT JSON:
     });
 
     const activePhases = phases.filter(p => nodesByPhase[p.id] && nodesByPhase[p.id].length > 0);
+    const nodeIdMap = {};     // originalId -> canvasId
+    const nodePhaseMap = {};  // canvasId -> phaseId
+    const phaseHubMap = {};   // phaseId -> hubCanvasId (关键：记录每个区块的 Hub ID)
 
-    // 大区块排列列数
-    const PHASE_COLS = activePhases.length > 4 ? 2 : activePhases.length;
-
-    const nodeIdMap = {};
-    const nodePhaseMap = {};
-
-    // --- 4. 核心布局循环 (Grid Matrix System) ---
+    // --- 4. 布局计算 ---
     let phaseStartX = 0;
     let phaseStartY = 0;
-    let maxRowHeight = 0; // 记录当前 Phase 行最高的 Group
+    let currentRowMaxHeight = 0;
 
     activePhases.forEach((phase, phaseIndex) => {
-      // Phase 换行逻辑 (Group 级别的 Grid)
-      if (!isSimpleMode && phaseIndex > 0 && phaseIndex % PHASE_COLS === 0) {
+      // 🎨 分配颜色
+      const themeColor = PHASE_COLORS[phaseIndex % PHASE_COLORS.length];
+
+      if (phaseIndex > 0 && phaseIndex % PHASES_PER_ROW === 0) {
         phaseStartX = 0;
-        phaseStartY += maxRowHeight + GROUP_GAP_Y;
-        maxRowHeight = 0;
+        phaseStartY += currentRowMaxHeight + GROUP_GAP_Y;
+        currentRowMaxHeight = 0;
       }
 
       const phaseNodes = nodesByPhase[phase.id];
+      if (phaseNodes.length === 0) return;
 
-      // --- Phase 内部网格计算 (Node 级别的 Grid) ---
-      let maxInnerWidth = 0;
-      let maxInnerHeight = 0;
-      const rowHeights = {}; // 记录每一行的最大高度
+      const hubNode = phaseNodes[0];
+      const satelliteNodes = phaseNodes.slice(1);
 
-      // 第一遍遍历：预计算每一行的高度 (解决高度对齐问题)
-      phaseNodes.forEach((node, i) => {
-        const cardText = buildCardContent(node);
-        const h = estimateHeight(cardText);
-        node._cardText = cardText;
-        node._height = h;
+      const satelliteRows = Math.ceil(satelliteNodes.length / SATELLITES_PER_ROW);
+      const satellitesWidth = Math.min(satelliteNodes.length, SATELLITES_PER_ROW) * (CARD_WIDTH + GAP_X) - GAP_X;
+      const innerGroupWidth = Math.max(CARD_WIDTH, satellitesWidth);
 
-        const row = Math.floor(i / NODES_PER_ROW);
-        if (!rowHeights[row]) rowHeights[row] = 0;
-        rowHeights[row] = Math.max(rowHeights[row], h);
+      // Hub 位置
+      const hubX = phaseStartX + GROUP_PADDING + (innerGroupWidth - CARD_WIDTH) / 2;
+      const hubY = phaseStartY + GROUP_PADDING + 40;
+
+      const hubCardText = buildCardContent(hubNode);
+      const hubHeight = estimateHeight(hubCardText);
+      const hubCanvasId = hubNode.id || `node-${phaseIndex}-hub`;
+
+      nodeIdMap[hubNode.id] = hubCanvasId;
+      nodePhaseMap[hubCanvasId] = phase.id;
+      phaseHubMap[phase.id] = hubCanvasId; // 🌟 注册 Hub
+
+      canvas.nodes.push({
+        id: hubCanvasId,
+        type: 'text',
+        text: hubCardText,
+        x: hubX,
+        y: hubY,
+        width: CARD_WIDTH,
+        height: hubHeight,
+        color: themeColor
       });
 
-      // 第二遍遍历：确定坐标
-      phaseNodes.forEach((node, i) => {
-        const canvasNodeId = node.id || `node-${phaseIndex}-${i}`;
+      // Satellites 位置
+      let maxSatY = hubY + hubHeight;
+      const satStartY = hubY + hubHeight + GAP_Y;
 
-        const col = i % NODES_PER_ROW;
-        const row = Math.floor(i / NODES_PER_ROW);
+      // 预计算每行高度
+      const rowHeights = {};
+      satelliteNodes.forEach((node, i) => {
+        const h = estimateHeight(buildCardContent(node));
+        const row = Math.floor(i / SATELLITES_PER_ROW);
+        rowHeights[row] = Math.max(rowHeights[row] || 0, h);
+      });
 
-        // 计算 Y 轴偏移：累加前面所有行的高度 + 间距
+      satelliteNodes.forEach((node, i) => {
+        const col = i % SATELLITES_PER_ROW;
+        const row = Math.floor(i / SATELLITES_PER_ROW);
+        const cardText = buildCardContent(node);
+        const h = estimateHeight(cardText);
+        const canvasNodeId = node.id || `node-${phaseIndex}-${i + 1}`;
+
+        const rowItemsCount = (row === satelliteRows - 1 && satelliteNodes.length % SATELLITES_PER_ROW !== 0)
+          ? satelliteNodes.length % SATELLITES_PER_ROW
+          : SATELLITES_PER_ROW;
+        const rowWidth = rowItemsCount * CARD_WIDTH + (rowItemsCount - 1) * GAP_X;
+        const rowStartOffset = (innerGroupWidth - rowWidth) / 2;
+
+        const absX = phaseStartX + GROUP_PADDING + rowStartOffset + col * (CARD_WIDTH + GAP_X);
+
         let yOffset = 0;
-        for (let r = 0; r < row; r++) {
-          yOffset += rowHeights[r] + CARD_GAP_Y;
-        }
-
-        const absX = phaseStartX + (isSimpleMode ? 0 : GROUP_PADDING) + col * (CARD_WIDTH + CARD_GAP_X);
-        const absY = phaseStartY + (isSimpleMode ? 0 : GROUP_PADDING + 40) + yOffset;
+        for (let r = 0; r < row; r++) yOffset += (rowHeights[r] || 200) + GAP_Y;
+        const absY = satStartY + yOffset;
 
         nodeIdMap[node.id] = canvasNodeId;
         nodePhaseMap[canvasNodeId] = phase.id;
@@ -749,128 +422,155 @@ Output STRICT JSON:
         canvas.nodes.push({
           id: canvasNodeId,
           type: 'text',
-          text: node._cardText,
+          text: cardText,
           x: absX,
           y: absY,
           width: CARD_WIDTH,
-          height: node._height,
-          color: node.type === 'signal' ? '4' : '3'
+          height: h,
+          color: '0'
         });
 
-        // 统计 Group 尺寸
-        const rightEdge = col * (CARD_WIDTH + CARD_GAP_X) + CARD_WIDTH;
-        const bottomEdge = yOffset + node._height;
-        maxInnerWidth = Math.max(maxInnerWidth, rightEdge);
-        maxInnerHeight = Math.max(maxInnerHeight, bottomEdge);
+        maxSatY = Math.max(maxSatY, absY + h);
       });
 
-      // 创建 Group 框 (仅分组模式)
-      const groupWidth = maxInnerWidth + GROUP_PADDING * 2;
-      const groupHeight = maxInnerHeight + GROUP_PADDING * 2 + 40;
+      // Group 容器
+      const groupWidth = innerGroupWidth + GROUP_PADDING * 2;
+      const groupHeight = (maxSatY - phaseStartY) + GROUP_PADDING;
 
       if (!isSimpleMode && phase.title) {
         canvas.nodes.push({
           id: `group-${phase.id}`,
           type: 'group',
-          // 🔥 修复：去掉重复数字前缀，直接使用 AI 返回的 phase.title
-          // AI 返回的 title 已包含 "Phase 1: ..." 格式
           label: phase.title,
           x: phaseStartX,
           y: phaseStartY,
           width: groupWidth,
           height: groupHeight,
-          color: '6'
+          color: themeColor
         });
       }
 
-      // 更新下一个 Phase 的位置
-      if (isSimpleMode) {
-        phaseStartY += maxInnerHeight + GROUP_GAP_Y;
-      } else {
-        phaseStartX += groupWidth + GROUP_GAP_X;
-        maxRowHeight = Math.max(maxRowHeight, groupHeight);
+      currentRowMaxHeight = Math.max(currentRowMaxHeight, groupHeight);
+      phaseStartX += groupWidth + GROUP_GAP_X;
+    });
+
+    // --- 5. 纯净连线 (The Gateway Protocol) ---
+
+    // 用于去重 (防止多条子节点连线合并成多条重复的 Hub 连线)
+    const processedEdges = new Set();
+
+    // 1. Hub -> Satellites (组内连线：保持星型)
+    activePhases.forEach(phase => {
+      const phaseNodes = nodesByPhase[phase.id];
+      if (phaseNodes.length < 2) return;
+      const hubId = nodeIdMap[phaseNodes[0].id];
+
+      for (let i = 1; i < phaseNodes.length; i++) {
+        const satId = nodeIdMap[phaseNodes[i].id];
+        canvas.edges.push({
+          id: `edge-inner-${hubId}-${satId}`,
+          fromNode: hubId,
+          toNode: satId,
+          fromSide: 'bottom',
+          toSide: 'top',
+          color: '0' // 极淡的灰色
+        });
       }
     });
 
-    // --- 5. 连线生成 (Grid 适配版) ---
+    // 2. AI 逻辑连线 (跨组连线：强制升维)
+    if (aiData.edges && Array.isArray(aiData.edges)) {
+      aiData.edges.forEach((edge, i) => {
+        const rawFromId = nodeIdMap[edge.from] || edge.from;
+        const rawToId = nodeIdMap[edge.to] || edge.to;
 
-    // 策略 A: 组内连线 (Z-Pattern / Reading Order)
-    activePhases.forEach(phase => {
-      const nodes = nodesByPhase[phase.id];
-      for (let i = 0; i < nodes.length - 1; i++) {
-        const curr = nodes[i];
-        const next = nodes[i + 1];
-        const currId = nodeIdMap[curr.id];
-        const nextId = nodeIdMap[next.id];
+        // 验证节点存在
+        if (!canvas.nodes.some(n => n.id === rawFromId) || !canvas.nodes.some(n => n.id === rawToId)) return;
 
-        // 判断是否换行了
-        const currRow = Math.floor(i / NODES_PER_ROW);
-        const nextRow = Math.floor((i + 1) / NODES_PER_ROW);
+        const fromPhase = nodePhaseMap[rawFromId];
+        const toPhase = nodePhaseMap[rawToId];
 
-        let fromSide = 'right';
-        let toSide = 'left';
+        // 🌟 核心逻辑：路由判定 🌟
+        let finalFromId = rawFromId;
+        let finalToId = rawToId;
+        let isCrossGroup = false;
 
-        if (currRow !== nextRow) {
-          // 换行连接：上一行末尾(Bottom) -> 下一行开头(Top)
-          fromSide = 'bottom';
-          toSide = 'top';
+        if (fromPhase !== toPhase) {
+          isCrossGroup = true;
+          // 🚀 升维打击：如果是跨组，强制将起止点重定向为该组的 Hub
+          // 无论本来连的是小弟还是大哥，现在统统由大哥出面
+          finalFromId = phaseHubMap[fromPhase];
+          finalToId = phaseHubMap[toPhase];
+        }
+
+        // 去重检查 (因为可能多个小弟连多个小弟，升维后会变成多条 Hub-Hub 重复线)
+        const edgeSignature = `${finalFromId}-${finalToId}`;
+        if (processedEdges.has(edgeSignature)) return; // 跳过重复
+        processedEdges.add(edgeSignature);
+
+        // 获取最终节点的坐标，用于计算连线方向
+        const fromNode = canvas.nodes.find(n => n.id === finalFromId);
+        const toNode = canvas.nodes.find(n => n.id === finalToId);
+
+        // 连线样式策略
+        let edgeColor = '1'; // 逻辑红线
+        let fromSide = 'bottom';
+        let toSide = 'top';
+
+        if (isCrossGroup) {
+          // 跨组连线：使用更粗的、显眼的连接方式
+          // 如果是回溯 (To 在 From 上方)，从右边绕
+          if (toNode.y < fromNode.y) {
+            fromSide = 'right';
+            toSide = 'right';
+          } else if (Math.abs(toNode.y - fromNode.y) < 50) { // 同行
+            fromSide = 'right';
+            toSide = 'left';
+          } else {
+            // 正常上下级
+            fromSide = 'bottom';
+            toSide = 'top';
+          }
+        } else {
+          // 组内连线 (AI 认为有直接联系的两个小弟)
+          // 这种可以保留，增加组内丰富度，但不宜太抢眼
+          edgeColor = '4'; // 绿色表示同组关联
+          if (toNode.y === fromNode.y) {
+            fromSide = 'right';
+            toSide = 'left';
+          }
         }
 
         canvas.edges.push({
-          id: `edge-inner-${currId}-${nextId}`,
-          fromNode: currId,
-          toNode: nextId,
+          id: `edge-ai-${i}`,
+          fromNode: finalFromId,
+          toNode: finalToId,
+          label: edge.label || '', // 保留 AI 的连线意图文字
           fromSide: fromSide,
           toSide: toSide,
-          color: '3'
+          color: edgeColor
         });
-      }
-    });
-
-    // 策略 B: 组间连线 (Group -> Group)
-    if (!isSimpleMode) {
-      activePhases.forEach((phase, i) => {
-        if (i < activePhases.length - 1) {
-          const nextPhase = activePhases[i + 1];
-          canvas.edges.push({
-            id: `edge-group-${i}`,
-            fromNode: `group-${phase.id}`,
-            toNode: `group-${nextPhase.id}`,
-            fromSide: 'right',
-            toSide: 'left',
-            color: '4'
-          });
-        }
       });
     }
 
-    // 策略 C: AI 额外连线 (同 Phase 内的跳跃连线)
-    if (aiData.edges && Array.isArray(aiData.edges)) {
-      aiData.edges.forEach((edge, i) => {
-        const fromId = nodeIdMap[edge.from] || edge.from;
-        const toId = nodeIdMap[edge.to] || edge.to;
+    // 3. Group 间连线 (仅当 AI 完全没生成连线时的保底)
+    // 如果 AI 已经很智能了，这个其实可以去掉，为了保险先留着，但颜色设为最淡
+    if (!isSimpleMode && aiData.edges && aiData.edges.length === 0) {
+      activePhases.forEach((phase, i) => {
+        if (i < activePhases.length - 1) {
+          const nextPhase = activePhases[i + 1];
+          // 也是 Hub 连 Hub
+          const fromHub = phaseHubMap[phase.id];
+          const toHub = phaseHubMap[nextPhase.id];
 
-        // 过滤跨 Phase 连线 (交给 Group 连线处理)
-        const fromPhase = nodePhaseMap[fromId];
-        const toPhase = nodePhaseMap[toId];
-        if (fromPhase && toPhase && fromPhase !== toPhase) return;
-
-        const fromExists = canvas.nodes.some(n => n.id === fromId);
-        const toExists = canvas.nodes.some(n => n.id === toId);
-
-        if (fromExists && toExists) {
-          // 检查是否已存在
-          const exists = canvas.edges.some(e => e.fromNode === fromId && e.toNode === toId);
-          if (!exists) {
-            canvas.edges.push({
-              id: `edge-ai-${i}`,
-              fromNode: fromId,
-              toNode: toId,
-              fromSide: 'bottom',
-              toSide: 'top',
-              color: '3'
-            });
-          }
+          canvas.edges.push({
+            id: `edge-group-flow-${i}`,
+            fromNode: fromHub,
+            toNode: toHub,
+            fromSide: 'right',
+            toSide: 'left',
+            color: '0'
+          });
         }
       });
     }
