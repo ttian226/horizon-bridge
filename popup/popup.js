@@ -178,6 +178,7 @@ chartBtn.addEventListener('click', async () => {
     return;
   }
 
+  const outputLang = document.getElementById('outputLang').value;
   setStatus('AI 正在分析对话生成 Canvas 图谱...', '');
   chartBtn.disabled = true;
 
@@ -186,7 +187,8 @@ chartBtn.addEventListener('click', async () => {
       action: 'generateChart',
       data: {
         title: currentData.title,
-        conversations: currentData.conversations
+        conversations: currentData.conversations,
+        outputLang
       }
     });
 

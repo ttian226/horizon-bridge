@@ -126,7 +126,7 @@ async function generateIndex(data) {
  * 优先从本地 Obsidian 读取数据，无需重新爬取 DOM
  */
 async function generateChart(data) {
-  const { title, conversations: domConversations } = data;
+  const { title, conversations: domConversations, outputLang = 'en' } = data;
 
   try {
     // 1. 检查同步状态
@@ -170,7 +170,7 @@ async function generateChart(data) {
 
     // 4. 调用 Gemini API 生成 Canvas 数据（带噪音过滤）
     console.log('[Horizon Bridge] Calling Gemini API to generate canvas data...');
-    const canvasResult = await GeminiAPI.generateCanvasData(conversations, title, fileMapping);
+    const canvasResult = await GeminiAPI.generateCanvasData(conversations, title, fileMapping, outputLang);
 
     if (!canvasResult.success) {
       return {

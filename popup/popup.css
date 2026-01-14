@@ -167,6 +167,39 @@ h1 {
   gap: 8px;
 }
 
+.chart-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #252540;
+  border-radius: 8px;
+}
+
+.option-label {
+  font-size: 13px;
+  color: #888;
+}
+
+.lang-select {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #fff;
+  background: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+}
+
+.lang-select:hover {
+  border-color: #6b7280;
+}
+
+.lang-select:focus {
+  border-color: #7c3aed;
+}
+
 .section-title {
   font-size: 12px;
   color: #888;

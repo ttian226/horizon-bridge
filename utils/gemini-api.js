@@ -150,7 +150,7 @@ export class GeminiAPI {
       config.cardWidth = 480; // 宽卡片，为了放列表
     }
 
-    console.log(`[GeminiAPI] Strategy: ${config.mode.toUpperCase()} (Raw: ${rawCount} -> Target: ${config.estimatedNodes})`);
+    console.log(`[GeminiAPI] Strategy: ${config.mode.toUpperCase()} (Raw: ${rawCount} -> Target: ~${config.estimatedNodes})`);
     return config;
   }
 
@@ -262,28 +262,40 @@ graph TD
    * @param {array} conversations - 对话数组
    * @param {string} sessionTitle - 会话标题
    * @param {array} fileMapping - 文件映射 [{index, fileName}]
+   * @param {string} outputLang - 输出语言: 'en' | 'zh'，默认 'en'
    */
-  static async generateCanvasData(conversations, sessionTitle, fileMapping) {
+  static async generateCanvasData(conversations, sessionTitle, fileMapping, outputLang = 'en') {
     const totalItems = conversations.length;
 
     // --- 使用动态配置计算器 ---
     const config = this.calculateGraphConfig(totalItems);
-    const compressionRate = Math.round(config.estimatedNodes / totalItems * 100);
+    console.log(`[GeminiAPI] Output language: ${outputLang === 'zh' ? 'Chinese' : 'English'}`);
 
     // --- 🔥 语言与风格策略 (Language & Style Protocol) ---
-    const LANGUAGE_RULE = `
+    // 根据 outputLang 参数强制输出指定语言
+    const LANGUAGE_RULE = outputLang === 'zh'
+      ? `
 **LANGUAGE & STYLE PROTOCOL:**
-1. **Detect**: Analyze the dominant language of the input.
-2. **Mirror**: Output in the **SAME LANGUAGE**.
-3. **Content Structure (CRITICAL)**:
+1. **Output Language**: **CHINESE (中文)** - ALL output MUST be in Chinese.
+2. **Content Structure (CRITICAL)**:
    - **Format**: **ALWAYS use Bullet Points (•)** for \`canvas_summary\`.
-   - **English Style**: Keep it Professional & Direct. (e.g. "• Implemented OAuth2 auth flow")
-   - **Chinese Style**: **Structured & Informative (结构化表达)**.
-     - **Requirement**: Use "Action + Object + Context" structure.
+   - **Style**: **Structured & Informative (结构化表达)**.
+     - **Requirement**: Use "动作 + 对象 + 上下文" structure.
      - **Avoid**: 4-character idioms (Too short) OR conversational filler (Too long).
      - **Bad**: "• 鉴权实现"
      - **Good**: "• 采用 OAuth2 协议实现用户鉴权，并集成 JWT"
-4. **Tech Terms**: Keep specific keywords (OAuth2, Redis, LLM) in English.`;
+3. **Tech Terms**: Keep specific keywords (OAuth2, Redis, LLM) in English.
+4. **Labels & Titles**: Must be in Chinese (e.g. "阶段一: 项目初始化" NOT "Phase 1: Init").`
+      : `
+**LANGUAGE & STYLE PROTOCOL:**
+1. **Output Language**: **ENGLISH** - ALL output MUST be in English.
+2. **Content Structure (CRITICAL)**:
+   - **Format**: **ALWAYS use Bullet Points (•)** for \`canvas_summary\`.
+   - **Style**: Keep it Professional & Direct.
+     - **Good**: "• Implemented OAuth2 auth flow"
+     - **Good**: "• Configured Redis caching layer"
+3. **Tech Terms**: Use standard technical terminology.
+4. **Labels & Titles**: Must be in English (e.g. "Phase 1: Project Setup").`;
 
     // --- 构建合并指令 ---
     let mergeInstruction = '';
@@ -302,21 +314,32 @@ graph TD
       ? 'Layout: Simple flowchart. Return empty phases [].'
       : `Grouping: Exactly ${config.targetPhases} logical Phases.`;
 
-    // --- 🔥 统一核心规则 (适用于所有模式) ---
+    // --- 🔥 统一核心规则 v11 (动态叶子节点版) ---
     const CORE_RULES = `
 **CRITICAL RULES:**
 1. **Granularity**: Synthesize multiple QAs into Insight Nodes.
 2. **Content**: **MANDATORY BULLET POINTS (•)** for \`canvas_summary\`.
    - Each node MUST list 2-4 key technical points derived from the merged QAs.
-3. **Emoji**: Mandatory relevant emoji.
-4. **Nodes**: Max ${config.estimatedNodes} nodes.`;
+3. **Linking Strategy (DYNAMIC LEAF-NODE PROTOCOL)**:
+   - **The "Leaf Node" Rule (Crucial)**: Link *Sub-concepts*, NOT the *Main Topic*.
+     - If the conversation is about "Vue Router":
+       - ❌ STOP linking: [[Vue Router]], [[Vue]], [[Routing]]. (Context/Background)
+       - ✅ START linking: [[Navigation Guards]], [[History Mode]], [[Lazy Loading]], [[Route Params]]. (Specifics)
+     - If the conversation is about "Firebase":
+       - ❌ STOP linking: [[Firebase]], [[Google]], [[Backend]]. (Context/Background)
+       - ✅ START linking: [[Firestore Rules]], [[Snapshot Listeners]], [[Cloud Functions]]. (Specifics)
+   - **The "Novelty" Rule**: Only link concepts that introduce *new structure* or *specificity* to the knowledge graph.
+   - **The "Wikipedia Test"**: Ask yourself - "Is this word worthy of its own Wiki page?" If too generic (e.g. [[API]], [[Code]], [[Data]]), don't link.
+   - **Format**: Wrap in double brackets.
+4. **Emoji**: Mandatory relevant emoji.
+5. **Nodes**: Max ${config.estimatedNodes} nodes.`;
 
     // --- 系统提示词 ---
     let systemPrompt;
     if (config.mode === 'architecture') {
       // 🔴 Level 4: 架构模式
-      systemPrompt = `You are a Principal Software Architect.
-Goal: Create a HIGH-LEVEL Architecture Map.
+      systemPrompt = `You are a Principal Software Architect building a Second Brain.
+Goal: Create a HIGH-LEVEL Architecture Map with KNOWLEDGE LINKS for Obsidian.
 
 ${LANGUAGE_RULE}
 ${CORE_RULES}
@@ -332,8 +355,8 @@ ${CORE_RULES}
 4. **Traceability**: qa_indices must capture ALL merged indices.`;
     } else {
       // 🟢 常规模式 (Story/Map)
-      systemPrompt = `You are a Senior Technical Editor.
-Goal: Compress conversation into logical structure.
+      systemPrompt = `You are a Senior Technical Editor building a Knowledge Graph.
+Goal: Compress conversation into logical structure with WIKI-LINKS for Obsidian.
 
 ${LANGUAGE_RULE}
 ${CORE_RULES}
@@ -370,7 +393,7 @@ A: ${cleanA}`;
 ${LANGUAGE_RULE}
 ${conversationText}
 
-Output JSON: { "nodes": [{"id":"n1","type":"signal","emoji":"🚀","label":"Label","canvas_summary":"• Key point 1","qa_indices":[0]}], "edges":[] }`;
+Output JSON: { "nodes": [{"id":"n1","type":"signal","emoji":"🚀","label":"Label","canvas_summary":"• Implemented [[Feature]] using [[Tool]]","qa_indices":[0]}], "edges":[] }`;
     } else {
       // 🔵/🟠/🔴 通用 User Prompt (强化列表格式示例)
       prompt = `Transform "${sessionTitle}" into Knowledge Map.
@@ -394,7 +417,7 @@ Output STRICT JSON:
       "type": "signal",
       "emoji": "🏗️",
       "label": "Topic Label",
-      "canvas_summary": "• First technical decision\\n• Second key insight\\n• Implemented solution",
+      "canvas_summary": "• 采用 [[OAuth2]] 协议实现用户鉴权\\n• 集成 [[Redis]] 优化 [[Session]] 存储\\n• 使用 [[Docker]] 进行容器化部署",
       "qa_indices": [0, 1, 2]
     }
   ],
@@ -403,7 +426,7 @@ Output STRICT JSON:
 **CONSTRAINTS**:
 - phases: ${config.targetPhases}
 - nodes: ~${config.estimatedNodes}
-- canvas_summary: **MUST be Bullet Points (•)**`;
+- canvas_summary: **MUST be Bullet Points (•) with [[Wiki-Links]]**`;
     }
 
     try {

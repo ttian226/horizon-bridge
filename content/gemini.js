@@ -66,7 +66,14 @@ function extractAllConversations() {
     let answer = '';
     if (markdownEl) {
       try {
-        answer = turndownService.turndown(markdownEl.innerHTML);
+        // 🔥 先转换，再清洗转义符（保留 Obsidian Wiki-Links）
+        let rawMd = turndownService.turndown(markdownEl.innerHTML);
+
+        // 将 \[\[ 替换为 [[，将 \]\] 替换为 ]]
+        answer = rawMd
+          .replace(/\\\[\\\[/g, '[[')
+          .replace(/\\\]\\\]/g, ']]');
+
       } catch (e) {
         console.error('[Horizon Bridge] Turndown error:', e);
         answer = markdownEl.innerText || '';
