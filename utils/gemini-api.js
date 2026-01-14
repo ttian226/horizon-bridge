@@ -246,14 +246,11 @@ Output STRICT JSON:
   }
 
   /**
-   * 智能自适应布局 v15 (Gateway Protocol & Rainbow Hubs)
+   * 智能自适应布局 v16 Lite (Visual De-escalation & Gateway Protocol)
    * 核心改进：
-   * 1. 🛡️ Gateway Protocol (网关协议):
-   *    - 跨区块连线被强制"升维"为 Hub-to-Hub
-   *    - 即使 AI 连接的是两个小节点，视觉上也只显示它们所属 Hub 之间的连接
-   *    - 彻底消灭"穿透线"和"斜切线"
-   * 2. 🌈 Rainbow Theme: 保持彩虹配色
-   * 3. 🧩 Strict Hierarchy: 严格的 Hub-Spoke 星型拓扑
+   * 1. 🎨 视觉降噪: 将逻辑连接线改为"基建灰" (Color 0)，让多彩的 Hub 卡片成为主角
+   * 2. 🛡️ 严格网关: 保持 Hub-to-Hub 协议，消灭穿透线
+   * 3. ⚡️ 极简路由: 移除复杂的绕行算法，回归直观的 Bottom-to-Top，方便人工后续微调
    */
   static convertToCanvasJSON(aiData, sessionTitle, fileMapping, basePath = '') {
     const canvas = { nodes: [], edges: [] };
@@ -454,12 +451,10 @@ Output STRICT JSON:
       phaseStartX += groupWidth + GROUP_GAP_X;
     });
 
-    // --- 5. 纯净连线 (The Gateway Protocol) ---
-
-    // 用于去重 (防止多条子节点连线合并成多条重复的 Hub 连线)
+    // --- 5. 纯净连线 (Visual De-escalation) ---
     const processedEdges = new Set();
 
-    // 1. Hub -> Satellites (组内连线：保持星型)
+    // 1. 组内连线 (Hub -> Satellites)
     activePhases.forEach(phase => {
       const phaseNodes = nodesByPhase[phase.id];
       if (phaseNodes.length < 2) return;
@@ -473,93 +468,82 @@ Output STRICT JSON:
           toNode: satId,
           fromSide: 'bottom',
           toSide: 'top',
-          color: '0' // 极淡的灰色
+          color: '0'
         });
       }
     });
 
-    // 2. AI 逻辑连线 (跨组连线：强制升维)
+    // 2. 跨组连线 (Hub -> Hub with Simple Routing)
     if (aiData.edges && Array.isArray(aiData.edges)) {
       aiData.edges.forEach((edge, i) => {
         const rawFromId = nodeIdMap[edge.from] || edge.from;
         const rawToId = nodeIdMap[edge.to] || edge.to;
 
-        // 验证节点存在
         if (!canvas.nodes.some(n => n.id === rawFromId) || !canvas.nodes.some(n => n.id === rawToId)) return;
 
         const fromPhase = nodePhaseMap[rawFromId];
         const toPhase = nodePhaseMap[rawToId];
 
-        // 🌟 核心逻辑：路由判定 🌟
         let finalFromId = rawFromId;
         let finalToId = rawToId;
         let isCrossGroup = false;
 
         if (fromPhase !== toPhase) {
-          isCrossGroup = true;
-          // 🚀 升维打击：如果是跨组，强制将起止点重定向为该组的 Hub
-          // 无论本来连的是小弟还是大哥，现在统统由大哥出面
-          finalFromId = phaseHubMap[fromPhase];
-          finalToId = phaseHubMap[toPhase];
+            isCrossGroup = true;
+            finalFromId = phaseHubMap[fromPhase];
+            finalToId = phaseHubMap[toPhase];
         }
 
-        // 去重检查 (因为可能多个小弟连多个小弟，升维后会变成多条 Hub-Hub 重复线)
         const edgeSignature = `${finalFromId}-${finalToId}`;
-        if (processedEdges.has(edgeSignature)) return; // 跳过重复
+        if (processedEdges.has(edgeSignature)) return;
         processedEdges.add(edgeSignature);
 
-        // 获取最终节点的坐标，用于计算连线方向
         const fromNode = canvas.nodes.find(n => n.id === finalFromId);
         const toNode = canvas.nodes.find(n => n.id === finalToId);
 
-        // 连线样式策略
-        let edgeColor = '1'; // 逻辑红线
+        // 🎨 降噪：跨组主干线改为 0 (灰色)
+        // 这样它们会退居背景，如果想强调可以手动改为红色
+        let edgeColor = '0';
         let fromSide = 'bottom';
         let toSide = 'top';
 
         if (isCrossGroup) {
-          // 跨组连线：使用更粗的、显眼的连接方式
-          // 如果是回溯 (To 在 From 上方)，从右边绕
-          if (toNode.y < fromNode.y) {
-            fromSide = 'right';
-            toSide = 'right';
-          } else if (Math.abs(toNode.y - fromNode.y) < 50) { // 同行
-            fromSide = 'right';
-            toSide = 'left';
-          } else {
-            // 正常上下级
-            fromSide = 'bottom';
-            toSide = 'top';
-          }
+            // 极简路由逻辑：怎么顺手怎么连
+            if (toNode.y < fromNode.y) {
+                 // 回溯：从右边连，防止穿过卡片
+                 fromSide = 'right'; toSide = 'right';
+            } else if (Math.abs(toNode.y - fromNode.y) < 50) {
+                 // 同行：左右互联
+                 fromSide = 'right'; toSide = 'left';
+            } else {
+                // 正常上下：底连顶
+                fromSide = 'bottom'; toSide = 'top';
+            }
         } else {
-          // 组内连线 (AI 认为有直接联系的两个小弟)
-          // 这种可以保留，增加组内丰富度，但不宜太抢眼
-          edgeColor = '4'; // 绿色表示同组关联
-          if (toNode.y === fromNode.y) {
-            fromSide = 'right';
-            toSide = 'left';
-          }
+             // 组内关联：绿色 (4) 微弱提示
+             edgeColor = '4';
+             if (toNode.y === fromNode.y) {
+                 fromSide = 'right'; toSide = 'left';
+             }
         }
 
         canvas.edges.push({
-          id: `edge-ai-${i}`,
-          fromNode: finalFromId,
-          toNode: finalToId,
-          label: edge.label || '', // 保留 AI 的连线意图文字
-          fromSide: fromSide,
-          toSide: toSide,
-          color: edgeColor
+            id: `edge-ai-${i}`,
+            fromNode: finalFromId,
+            toNode: finalToId,
+            label: edge.label || '',
+            fromSide: fromSide,
+            toSide: toSide,
+            color: edgeColor
         });
       });
     }
 
-    // 3. Group 间连线 (仅当 AI 完全没生成连线时的保底)
-    // 如果 AI 已经很智能了，这个其实可以去掉，为了保险先留着，但颜色设为最淡
-    if (!isSimpleMode && aiData.edges && aiData.edges.length === 0) {
+    // 3. 兜底顺序连线 (仅当无 AI 连线时)
+    if (!isSimpleMode && aiData.edges.length === 0) {
       activePhases.forEach((phase, i) => {
         if (i < activePhases.length - 1) {
           const nextPhase = activePhases[i + 1];
-          // 也是 Hub 连 Hub
           const fromHub = phaseHubMap[phase.id];
           const toHub = phaseHubMap[nextPhase.id];
 
