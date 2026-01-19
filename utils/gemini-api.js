@@ -152,7 +152,7 @@ export class GeminiAPI {
 1. **Output Language**: **ENGLISH**.
 2. **Content Structure**: **ALWAYS use Bullet Points (•)**.`;
 
-    // --- 核心规则 v12 ---
+    // --- 核心规则 v17 (Pro Aesthetics) ---
     const CORE_RULES = `
 **CRITICAL RULES:**
 1. **Granularity**: Synthesize multiple QAs into Insight Nodes.
@@ -168,7 +168,20 @@ export class GeminiAPI {
    - **Hub-to-Hub**: Connect related Phases via their Main Concepts.
    - **Back-Linking**: Create loops if discussion returns to a previous topic.
 
-6. **Nodes**: Max ${config.estimatedNodes} nodes.`;
+**6. 🎨 VISUAL AESTHETICS (v17 NEW):**
+   - **Size**: Assign \`size\` based on importance:
+     - "L" (Large): Hub nodes, Core Concepts, Main Architecture.
+     - "M" (Medium): Standard explanations, Details.
+     - "S" (Small): Minor notes, Code snippets, Examples.
+   - **Semantic Coloring**: Assign \`color\` based on content type (NOT random):
+     - "1" (Red): Problems, Challenges, Warnings, Errors.
+     - "4" (Green): Solutions, Best Practices, Success, Answers.
+     - "6" (Purple): Core Architecture, High-level Concepts, Main Ideas.
+     - "3" (Yellow): Tools, Libraries, Resources, References.
+     - "5" (Cyan): Examples, Code, Demos.
+     - "0" (Grey): Background info, Context, Minor details.
+
+7. **Nodes**: Max ${config.estimatedNodes} nodes.`;
 
     const systemPrompt = `You are a Knowledge Architect.
 Goal: Create a Structured Knowledge Graph for Obsidian.
@@ -206,7 +219,9 @@ Output STRICT JSON:
       "emoji": "💡",
       "label": "Concept Label",
       "canvas_summary": "• Point 1 with [[Link]]\\n• Point 2",
-      "qa_indices": [0, 1]
+      "qa_indices": [0, 1],
+      "size": "L",
+      "color": "6"
     }
   ],
   "edges": [{"from": "n1", "to": "n2", "label": "relates to"}]
@@ -246,11 +261,12 @@ Output STRICT JSON:
   }
 
   /**
-   * 智能自适应布局 v16 Lite (Visual De-escalation & Gateway Protocol)
+   * 智能自适应布局 v17 (Pro Aesthetics: Variable Sizes & Semantic Colors)
    * 核心改进：
-   * 1. 🎨 视觉降噪: 将逻辑连接线改为"基建灰" (Color 0)，让多彩的 Hub 卡片成为主角
-   * 2. 🛡️ 严格网关: 保持 Hub-to-Hub 协议，消灭穿透线
-   * 3. ⚡️ 极简路由: 移除复杂的绕行算法，回归直观的 Bottom-to-Top，方便人工后续微调
+   * 1. 🎨 视觉权重: Hub 用 L 尺寸，Satellite 支持 S/M/L 三档
+   * 2. 🌈 语义配色: AI 根据内容性质指定颜色，而非机械轮询
+   * 3. 🛡️ 严格网关: 保持 Hub-to-Hub 协议
+   * 4. ⚡️ 极简路由: Bottom-to-Top 为主，方便手动微调
    */
   static convertToCanvasJSON(aiData, sessionTitle, fileMapping, basePath = '') {
     const canvas = { nodes: [], edges: [] };
@@ -259,18 +275,25 @@ Output STRICT JSON:
 
     // --- 1. 配置参数 ---
     const mode = aiData.meta?.mode || 'map';
-    const CARD_WIDTH = aiData.meta?.cardWidth || 400;
+
+    // 🎨 v17: 尺寸规范 (参考官方 json-canvas skill)
+    const SIZE_MAP = {
+      'S': { width: 280 },
+      'M': { width: 380 },
+      'L': { width: 520 }
+    };
+    const DEFAULT_SIZE = 'M';
 
     const GAP_X = 60;
-    const GAP_Y = 120;
-    const GROUP_PADDING = 60;
-    const GROUP_GAP_X = 250; // 加大组间距，让高速公路更宽敞
-    const GROUP_GAP_Y = 250;
+    const GAP_Y = 100;
+    const GROUP_PADDING = 50;
+    const GROUP_GAP_X = 200;
+    const GROUP_GAP_Y = 200;
     const PHASES_PER_ROW = 2;
     const SATELLITES_PER_ROW = 3;
 
-    // 🎨 Obsidian Canvas 颜色代码
-    const PHASE_COLORS = ['1', '2', '3', '4', '5', '6'];
+    // 🎨 Phase 默认色（当 AI 未指定时的兜底）
+    const PHASE_COLORS = ['6', '4', '3', '5', '1', '2'];
 
     // --- 2. 辅助函数 ---
     const fileMap = {};
@@ -281,12 +304,12 @@ Output STRICT JSON:
       return [basePath, sessionTitle, fileName].filter(p => p).join('/');
     };
 
-    const estimateHeight = (text) => {
+    const estimateHeight = (text, cardWidth = 380) => {
       if (!text) return 100;
       const renderedText = text.replace(/\[\[.*?\|(.*?)\]\]/g, '$1');
       const lines = renderedText.split('\n');
       let totalHeight = 50;
-      const visualCapacity = CARD_WIDTH > 400 ? 50 : 38;
+      const visualCapacity = cardWidth > 400 ? 55 : (cardWidth > 300 ? 40 : 30);
       lines.forEach(line => {
         const trimmed = line.trim();
         let len = 0;
@@ -355,16 +378,23 @@ Output STRICT JSON:
       const hubNode = phaseNodes[0];
       const satelliteNodes = phaseNodes.slice(1);
 
+      // 🎨 v17: Hub 强制使用 L 尺寸，颜色优先用 AI 指定，否则用 Phase 默认色
+      const hubSize = SIZE_MAP['L'];
+      const hubColor = hubNode.color || themeColor;
+
+      // 🎨 v17: Satellite 使用 AI 指定的尺寸，默认 M
+      const satSize = SIZE_MAP[DEFAULT_SIZE];
+
       const satelliteRows = Math.ceil(satelliteNodes.length / SATELLITES_PER_ROW);
-      const satellitesWidth = Math.min(satelliteNodes.length, SATELLITES_PER_ROW) * (CARD_WIDTH + GAP_X) - GAP_X;
-      const innerGroupWidth = Math.max(CARD_WIDTH, satellitesWidth);
+      const satellitesWidth = Math.min(satelliteNodes.length, SATELLITES_PER_ROW) * (satSize.width + GAP_X) - GAP_X;
+      const innerGroupWidth = Math.max(hubSize.width, satellitesWidth);
 
       // Hub 位置
-      const hubX = phaseStartX + GROUP_PADDING + (innerGroupWidth - CARD_WIDTH) / 2;
+      const hubX = phaseStartX + GROUP_PADDING + (innerGroupWidth - hubSize.width) / 2;
       const hubY = phaseStartY + GROUP_PADDING + 40;
 
       const hubCardText = buildCardContent(hubNode);
-      const hubHeight = estimateHeight(hubCardText);
+      const hubHeight = estimateHeight(hubCardText, hubSize.width);
       const hubCanvasId = hubNode.id || `node-${phaseIndex}-hub`;
 
       nodeIdMap[hubNode.id] = hubCanvasId;
@@ -377,9 +407,9 @@ Output STRICT JSON:
         text: hubCardText,
         x: hubX,
         y: hubY,
-        width: CARD_WIDTH,
+        width: hubSize.width,
         height: hubHeight,
-        color: themeColor
+        color: hubColor
       });
 
       // Satellites 位置
@@ -389,7 +419,8 @@ Output STRICT JSON:
       // 预计算每行高度
       const rowHeights = {};
       satelliteNodes.forEach((node, i) => {
-        const h = estimateHeight(buildCardContent(node));
+        const nodeSize = SIZE_MAP[node.size] || satSize;
+        const h = estimateHeight(buildCardContent(node), nodeSize.width);
         const row = Math.floor(i / SATELLITES_PER_ROW);
         rowHeights[row] = Math.max(rowHeights[row] || 0, h);
       });
@@ -398,16 +429,21 @@ Output STRICT JSON:
         const col = i % SATELLITES_PER_ROW;
         const row = Math.floor(i / SATELLITES_PER_ROW);
         const cardText = buildCardContent(node);
-        const h = estimateHeight(cardText);
+
+        // 🎨 v17: 使用 AI 指定的尺寸和颜色
+        const nodeSize = SIZE_MAP[node.size] || satSize;
+        const nodeColor = node.color || '0';  // 默认灰色，除非 AI 指定
+
+        const h = estimateHeight(cardText, nodeSize.width);
         const canvasNodeId = node.id || `node-${phaseIndex}-${i + 1}`;
 
         const rowItemsCount = (row === satelliteRows - 1 && satelliteNodes.length % SATELLITES_PER_ROW !== 0)
           ? satelliteNodes.length % SATELLITES_PER_ROW
           : SATELLITES_PER_ROW;
-        const rowWidth = rowItemsCount * CARD_WIDTH + (rowItemsCount - 1) * GAP_X;
+        const rowWidth = rowItemsCount * satSize.width + (rowItemsCount - 1) * GAP_X;
         const rowStartOffset = (innerGroupWidth - rowWidth) / 2;
 
-        const absX = phaseStartX + GROUP_PADDING + rowStartOffset + col * (CARD_WIDTH + GAP_X);
+        const absX = phaseStartX + GROUP_PADDING + rowStartOffset + col * (satSize.width + GAP_X);
 
         let yOffset = 0;
         for (let r = 0; r < row; r++) yOffset += (rowHeights[r] || 200) + GAP_Y;
@@ -422,9 +458,9 @@ Output STRICT JSON:
           text: cardText,
           x: absX,
           y: absY,
-          width: CARD_WIDTH,
+          width: nodeSize.width,
           height: h,
-          color: '0'
+          color: nodeColor
         });
 
         maxSatY = Math.max(maxSatY, absY + h);
