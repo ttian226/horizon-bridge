@@ -337,7 +337,7 @@ Output STRICT JSON:
       return totalHeight;
     };
 
-    // v18: 卡片内容构建 (HTML Compact Footer)
+    // v18: 卡片内容构建 (Compact Footer with clickable links)
     const buildCardContent = (node) => {
       const defaultIcon = node.type === 'signal' ? '🟢' : '🔸';
       const icon = node.emoji || defaultIcon;
@@ -354,10 +354,10 @@ Output STRICT JSON:
 
         const linksStr = links.join(' ');
 
-        // 🎨 v18: HTML Compact Footer
-        // - 虚线分割，字号更小，颜色更淡
-        // - 使用 Obsidian 主题变量自适应深浅模式
-        cardText += `\n<div style="margin-top:12px;padding-top:6px;border-top:1px dashed var(--text-faint);font-size:0.8em;color:var(--text-muted);opacity:0.85;">${linksStr}</div>`;
+        // 🎨 v18: Compact Footer
+        // - HTML div 只画虚线，链接放在外面保持可点击
+        // - Wiki-Links 必须在 HTML 外部才能被 Obsidian 解析
+        cardText += `\n<div style="margin-top:10px;border-top:1px dashed var(--text-faint);"></div>\n${linksStr}`;
       }
       return cardText;
     };
