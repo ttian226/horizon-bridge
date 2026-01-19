@@ -1,137 +1,157 @@
 # Horizon Bridge
 
-A Chrome extension that syncs Gemini conversations to Obsidian with AI-powered knowledge graph generation.
+A Chrome extension that syncs Gemini web conversations to Obsidian with AI-powered knowledge graph (Canvas) generation.
 
 **[中文文档](./README_CN.md)**
 
+---
+
+## ⚠️ Disclaimer (Read First)
+
+**This is an experimental "personal use" project. Open-sourced for learning and reference only.**
+
+1. **Maintenance**: This project comes with **NO guarantee** of long-term maintenance or updates. It's shared for developers who want to learn or build upon it.
+2. **Breaking Risk**: This extension relies on parsing Gemini's web page DOM structure. **If Google updates the Gemini interface, the extension will break immediately.** You'll need to fix the selectors in `content.js` yourself ("Vibe Coding").
+3. **Data Privacy**: This is a pure client-side extension. Your conversation data only flows between **your browser**, **Google Gemini API**, and **your local Obsidian**. It is **NOT** uploaded to any third-party server.
+
+---
+
 ## Features
 
-- **One-click Sync**: Export Gemini conversations to Obsidian as Markdown files
-- **AI Knowledge Graph**: Auto-generate Canvas mind maps with thematic clustering
-- **Smart Compression**: 4-tier adaptive strategy for handling large conversations (15/50/120+ QAs)
-- **Visual Aesthetics**: Semantic coloring, variable card sizes (S/M/L), Hub & Spoke layout
-- **Clickable Links**: Each card links back to original Q&A files
+- **Conversation Archive**: Export Gemini web conversations to Obsidian Markdown files
+- **AI Knowledge Graph**: Uses Gemini API to analyze conversations and generate Canvas mind maps
+- **Smart Filtering**: Filters out chit-chat, extracts core knowledge points
+- **Visual Enhancements**:
+  - Hub & Spoke layout: Auto-identifies core concepts vs details
+  - Semantic coloring: Auto-colors based on content type (problems/solutions/code/architecture)
+  - Bidirectional links: Canvas cards link back to original Q&A files
 
 ## Prerequisites
 
-- Google Chrome browser
-- [Obsidian](https://obsidian.md/) (v1.0+)
-- [Obsidian Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) plugin
-- [Gemini API Key](https://aistudio.google.com/app/apikey) (free tier available)
+1. **Google Chrome browser**
+2. **Obsidian** (v1.0+)
+3. **Gemini API Key** ([Get one here](https://aistudio.google.com/app/apikey))
+   - *Why Gemini?* Gemini has a massive context window (1M+ tokens), ideal for analyzing long conversations
+   - If you want to use OpenAI/Claude, you'll need to modify `utils/gemini-api.js`
+
+### Required Obsidian Plugin
+
+You only need **ONE** plugin:
+
+| Plugin | Status | Purpose |
+|--------|--------|---------|
+| [Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) | **Required** | Allows the extension to write files to your Obsidian Vault |
 
 ## Installation
 
 ### Step 1: Configure Obsidian Local REST API
 
-1. Open Obsidian → Settings → Community plugins
-2. Browse and install **"Local REST API"**
-3. Enable the plugin
-4. In plugin settings:
-   - Enable **"Enable Non-encrypted (HTTP) Server"**
-   - Note down your **API Key** (you'll need this later)
-   - Default URL: `http://127.0.0.1:27123`
+1. Install and enable the **Local REST API** plugin in Obsidian
+2. Go to plugin settings (Settings → Community plugins → Local REST API gear icon)
+3. Enable **"Enable Non-encrypted (HTTP) Server"**
+4. **Note down these values**:
+   - **API Key**: Click the eye icon to reveal, then copy
+   - **Port**: Default is `27123`
+   - *Verify*: Visit `http://127.0.0.1:27123` in browser, you should see a response
 
 ### Step 2: Get Gemini API Key
 
 1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Click "Create API Key"
-3. Copy and save your API key
+2. Create and copy your API Key
 
-### Step 3: Install the Extension
+### Step 3: Install the Chrome Extension
 
-1. Download or clone this repository:
+1. **Download the code**:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/horizon-bridge.git
+   git clone https://github.com/ttian226/horizon-bridge.git
+   # Or download the ZIP and extract
    ```
 
-2. Create your config file:
-   ```bash
-   cp config.example.js config.js
-   ```
-
-3. Edit `config.js` with your API keys:
+2. **Configure your keys**:
+   - Copy `config.example.js` to `config.js`
+   - Edit `config.js` with your keys:
    ```javascript
    export const CONFIG = {
-     // Gemini API
-     geminiApiKey: 'YOUR_GEMINI_API_KEY',      // From Step 2
-     geminiModel: 'gemini-2.0-flash-lite',     // Recommended model
+     // Gemini API (for Canvas generation)
+     geminiApiKey: 'YOUR_GEMINI_API_KEY',
+     geminiModel: 'gemini-2.0-flash', // Recommended: fast and generous free tier
 
-     // Obsidian Local REST API
-     obsidianApiKey: 'YOUR_OBSIDIAN_API_KEY',  // From Step 1
-     obsidianBaseUrl: 'http://127.0.0.1:27123', // Default port
-     obsidianBasePath: 'Gemini'                 // Folder in your vault
+     // Obsidian config
+     obsidianApiKey: 'YOUR_OBSIDIAN_PLUGIN_KEY',
+     obsidianBaseUrl: 'http://127.0.0.1:27123',
+     obsidianBasePath: 'Gemini' // Files saved to Vault/Gemini
    };
    ```
 
-4. Load the extension in Chrome:
+3. **Load the extension**:
    - Navigate to `chrome://extensions/`
-   - Enable **"Developer mode"** (top right toggle)
-   - Click **"Load unpacked"**
-   - Select the `horizon-bridge` folder
-
-5. Pin the extension to your toolbar for easy access
+   - Enable **"Developer mode"** (top right)
+   - Click **"Load unpacked"** → Select this project folder
 
 ## Usage
 
-1. Open any [Gemini conversation](https://gemini.google.com/) in Chrome
-2. Click the **Horizon Bridge** extension icon
-3. Click **"Sync to Obsidian"**
-4. Wait for the sync to complete
-5. Find your files in Obsidian at `Vault/Gemini/[Session Name]/`
+1. Open any [Gemini web conversation](https://gemini.google.com/)
+
+2. **⚠️ Critical Step: Load the Full Conversation**
+   - For long conversations, Gemini only loads recent messages by default
+   - **Manually scroll to the TOP of the page** until you see the first message, ensuring all content is loaded
+   - *Skipping this step will result in incomplete documents and graphs*
+
+3. Click the **Horizon Bridge** icon in your browser toolbar
+4. Click **"Sync to Obsidian"**
+5. Wait for sync to complete (long conversations may take 30+ seconds for AI graph generation)
+6. Check results in Obsidian under `Gemini/` folder
 
 ## Output Structure
 
 ```
 Gemini/
-└── [Session Name]/
-    ├── _INDEX.md           # Overview with summary and embedded links
+└── [Session Title]/
+    ├── _INDEX.md           # Index page (summary and navigation)
     ├── Logic_Map.canvas    # AI-generated knowledge graph
-    ├── 001-Topic_A.md      # Individual Q&A file
-    ├── 002-Topic_B.md      # Individual Q&A file
+    ├── 001-Question.md     # Individual Q&A files
+    ├── 002-Answer.md
     └── ...
 ```
 
-### Canvas Features
+## FAQ
 
-- **Hub & Spoke Layout**: Core concepts as hubs, details as satellites
-- **Semantic Colors**:
-  - Purple (6): Core architecture, main concepts
-  - Green (4): Solutions, best practices
-  - Red (1): Problems, warnings
-  - Yellow (3): Tools, resources
-  - Cyan (5): Examples, code
-  - Grey (0): Background info
-- **Variable Sizes**: L (large) for hubs, M/S for details
-- **Clickable Links**: Jump to original Q&A from any card
+**Q: Why does the export only contain recent messages?**
 
-## Troubleshooting
+Gemini uses "lazy loading" for long conversations. See Usage step 2 - you must manually scroll to the top of the page to load all history before syncing.
 
-### "Failed to connect to Obsidian"
-- Make sure Obsidian is running
-- Check that Local REST API plugin is enabled
-- Verify the port (default: 27123) matches your config
+**Q: Sync button not working / errors?**
 
-### "Gemini API error"
-- Verify your Gemini API key is correct
-- Check your API quota at [Google AI Studio](https://aistudio.google.com/)
+Press F12 to open Console and check red error messages:
+- `401/403 Error`: Obsidian API Key is wrong, or Local REST API HTTP mode not enabled
+- `DOM Error`: Google updated the page, you need to fix `content.js`
 
-### Links not clickable in Canvas
-- Make sure you're using v18 or later
-- Re-sync the conversation to regenerate the canvas
+**Q: Why does Canvas only have a few nodes?**
 
-## Version History
+Check console - Gemini API might be rate-limited, or the conversation is too short.
 
-| Version | Features |
-|---------|----------|
-| v18 | Compact footer with clickable Wiki-Links |
-| v17 | Variable sizes (S/M/L) + semantic coloring |
-| v16 | Visual de-escalation, gray connection lines |
-| v15 | Rainbow Hub theme, Gateway Protocol |
+**Q: Can I use GPT-4 instead?**
 
-## License
+Yes, but requires code changes. Modify `utils/gemini-api.js` and rewrite the `generate` method for OpenAI format. Note that GPT-4 has smaller context window and higher token costs.
 
-MIT
+## Modification Guide
+
+If the extension breaks or you want to customize, modify these files:
+
+| File | Purpose |
+|------|---------|
+| `content.js` | DOM parsing logic (fix this when Gemini updates) |
+| `utils/gemini-api.js` | AI prompts and Canvas generation logic |
+| `config.js` | API Keys and basic settings |
 
 ## Contributing
 
-Issues and Pull Requests are welcome!
+This project is primarily for **personal use** and may not actively handle Issues.
+
+If the extension breaks:
+1. **Recommended**: Fork this repo, fix it yourself, use via "Load unpacked"
+2. **Optional**: If you fix it and want to share, Pull Requests are welcome
+
+## License
+
+MIT License
