@@ -304,14 +304,13 @@ Output STRICT JSON:
       return [basePath, sessionTitle, fileName].filter(p => p).join('/');
     };
 
-    // v18: 高度计算 (适配 Compact HTML Footer)
+    // v18 Fix: 高度计算 (适配 <small> Footer + 双换行)
     const estimateHeight = (text, cardWidth = 380) => {
       if (!text) return 100;
 
-      // 分离正文和 Footer (检测 HTML div 标记)
-      const parts = text.split('<div style="');
-      const bodyText = parts[0];
-      const hasFooter = parts.length > 1;
+      // 检测是否有 Footer (用 border-top 作为特征)
+      const hasFooter = text.includes('border-top:');
+      const bodyText = hasFooter ? text.split('border-top:')[0] : text;
 
       const renderedText = bodyText.replace(/\[\[.*?\|(.*?)\]\]/g, '$1');
       const lines = renderedText.split('\n');
@@ -331,13 +330,13 @@ Output STRICT JSON:
         }
       });
 
-      // Footer 高度 (紧凑型，固定 30px)
-      if (hasFooter) totalHeight += 30;
+      // Footer 高度 (加了 \n\n 和 margin，给宽松点)
+      if (hasFooter) totalHeight += 45;
 
       return totalHeight;
     };
 
-    // v18: 卡片内容构建 (Compact Footer with clickable links)
+    // v18 Fix: 卡片内容构建 (使用 <small> 内联标签保持链接可点击)
     const buildCardContent = (node) => {
       const defaultIcon = node.type === 'signal' ? '🟢' : '🔸';
       const icon = node.emoji || defaultIcon;
@@ -354,10 +353,11 @@ Output STRICT JSON:
 
         const linksStr = links.join(' ');
 
-        // 🎨 v18: Compact Footer
-        // - HTML div 只画虚线，链接放在外面保持可点击
-        // - Wiki-Links 必须在 HTML 外部才能被 Obsidian 解析
-        cardText += `\n<div style="margin-top:10px;border-top:1px dashed var(--text-faint);"></div>\n${linksStr}`;
+        // 🔧 v18 Fix:
+        // 1. \n\n 双换行强制 Obsidian 重新进入 Markdown 解析模式
+        // 2. <small> 是内联标签，Obsidian 允许在内部解析 [[WikiLink]]
+        // 3. opacity: 0.7 实现淡化效果，自适应深浅主题
+        cardText += `\n\n<div style="border-top: 1px dashed var(--text-faint); margin: 8px 0;"></div>\n\n<small style="opacity: 0.7;">${linksStr}</small>`;
       }
       return cardText;
     };
