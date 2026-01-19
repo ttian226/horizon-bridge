@@ -261,12 +261,12 @@ Output STRICT JSON:
   }
 
   /**
-   * 智能自适应布局 v17 (Pro Aesthetics: Variable Sizes & Semantic Colors)
+   * 智能自适应布局 v18 (Pro Aesthetics + Compact Footer)
    * 核心改进：
    * 1. 🎨 视觉权重: Hub 用 L 尺寸，Satellite 支持 S/M/L 三档
    * 2. 🌈 语义配色: AI 根据内容性质指定颜色，而非机械轮询
-   * 3. 🛡️ 严格网关: 保持 Hub-to-Hub 协议
-   * 4. ⚡️ 极简路由: Bottom-to-Top 为主，方便手动微调
+   * 3. 📎 紧凑页脚: HTML Compact Footer，虚线分割，小字号链接
+   * 4. 🛡️ 严格网关: 保持 Hub-to-Hub 协议
    */
   static convertToCanvasJSON(aiData, sessionTitle, fileMapping, basePath = '') {
     const canvas = { nodes: [], edges: [] };
@@ -304,36 +304,60 @@ Output STRICT JSON:
       return [basePath, sessionTitle, fileName].filter(p => p).join('/');
     };
 
+    // v18: 高度计算 (适配 Compact HTML Footer)
     const estimateHeight = (text, cardWidth = 380) => {
       if (!text) return 100;
-      const renderedText = text.replace(/\[\[.*?\|(.*?)\]\]/g, '$1');
+
+      // 分离正文和 Footer (检测 HTML div 标记)
+      const parts = text.split('<div style="');
+      const bodyText = parts[0];
+      const hasFooter = parts.length > 1;
+
+      const renderedText = bodyText.replace(/\[\[.*?\|(.*?)\]\]/g, '$1');
       const lines = renderedText.split('\n');
-      let totalHeight = 50;
+
+      let totalHeight = 40;
       const visualCapacity = cardWidth > 400 ? 55 : (cardWidth > 300 ? 40 : 30);
+
       lines.forEach(line => {
         const trimmed = line.trim();
-        let len = 0;
-        for (let i = 0; i < trimmed.length; i++) len += (trimmed.charCodeAt(i) > 255 ? 1.8 : 1);
-        if (trimmed.startsWith('###')) totalHeight += 40;
-        else if (trimmed.startsWith('---')) totalHeight += 15;
-        else totalHeight += (Math.ceil(len / visualCapacity) || 1) * 26;
+        if (!trimmed) {
+          totalHeight += 5;
+        } else {
+          let len = 0;
+          for (let i = 0; i < trimmed.length; i++) len += (trimmed.charCodeAt(i) > 255 ? 1.8 : 1);
+          if (trimmed.startsWith('###')) totalHeight += 35;
+          else totalHeight += (Math.ceil(len / visualCapacity) || 1) * 24;
+        }
       });
-      return totalHeight + 15;
+
+      // Footer 高度 (紧凑型，固定 30px)
+      if (hasFooter) totalHeight += 30;
+
+      return totalHeight;
     };
 
+    // v18: 卡片内容构建 (HTML Compact Footer)
     const buildCardContent = (node) => {
       const defaultIcon = node.type === 'signal' ? '🟢' : '🔸';
       const icon = node.emoji || defaultIcon;
+
       let cardText = `### ${icon} ${node.label || 'Node'}\n\n${node.canvas_summary || '暂无摘要'}`;
+
       if (node.qa_indices && node.qa_indices.length > 0) {
-        cardText += '\n\n---\n';
         const links = [];
         node.qa_indices.slice(0, 6).forEach(idx => {
           const fName = fileMap[idx];
           if (fName) links.push(`[[${buildFilePath(fName)}|QA${idx + 1}]]`);
         });
-        if (node.qa_indices.length > 6) links.push(`+${node.qa_indices.length - 6}more`);
-        cardText += links.join(' ');
+        if (node.qa_indices.length > 6) links.push(`+${node.qa_indices.length - 6}`);
+
+        const linksStr = links.join(' ');
+
+        // 🎨 v18: HTML Compact Footer
+        // - 虚线分割，字号更小，颜色更淡
+        // - 使用 Obsidian 主题变量自适应深浅模式
+        cardText += `\n<div style="margin-top:12px;padding-top:6px;border-top:1px dashed var(--text-faint);font-size:0.8em;color:var(--text-muted);opacity:0.85;">${linksStr}</div>`;
       }
       return cardText;
     };
